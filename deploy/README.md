@@ -77,7 +77,7 @@ Open `http://127.0.0.1:8085` and enter the app token from the private local envi
 
 ## Operating limits
 
-- Original PDFs remain unchanged and excluded from version control.
+- The three original PDFs remain unchanged; user-authorized copies and their manifest are included in version control. PDFs remain excluded from the Cloud Build context and runtime image.
 - The container contains a fixed, derived index; rebuild to change documents. The bucket keeps the private snapshot separately.
 - Sessions and local audit files are temporary on Cloud Run. They are not a durable multi-user database. Runtime operational logs should also go to Cloud Logging, with source text and prompts omitted.
 - Application token and model-call limits reduce exposure; they do not enforce a cloud billing ceiling. Track embedding, model, build, storage, and hosting costs separately.

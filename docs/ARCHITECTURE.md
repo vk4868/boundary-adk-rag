@@ -1,6 +1,6 @@
 # Boundary architecture
 
-Boundary is an intermediate document-intelligence portfolio project for researching a fixed, private collection of cricket rulebooks. It demonstrates a pattern relevant to policy, compliance and operational knowledge work: retrieve evidence, distinguish governing scopes, review a proposed answer, and release only a checked response. It is not a production compliance decision system.
+Boundary is an intermediate document-intelligence portfolio project for researching a fixed collection of cricket rulebooks included in the repository under the user's publication authorization. It demonstrates a pattern relevant to policy, compliance and operational knowledge work: retrieve evidence, distinguish governing scopes, review a proposed answer, and release only a checked response. It is not a production compliance decision system.
 
 ## Request path
 
@@ -33,7 +33,7 @@ The reviewer is instructed to check completeness, but its schema records a verdi
 
 ## Corpus and retrieval
 
-The three authorized PDFs remain immutable private inputs:
+The three included, user-authorized PDFs remain immutable ingestion inputs:
 
 | Source ID | Supplied document | Scope |
 |---|---|---|
@@ -59,7 +59,7 @@ Index integrity is checked against its snapshot metadata. Source allowlists appl
 - The user interface displays the final reviewed response, never a streaming research draft.
 - Model and tool calls have explicit limits. Request timeouts and the application's conservative cost accounting stop additional work; billing budgets/estimates are not hard Google billing caps.
 - Default audit records contain request IDs, stages, durations, counters and status, without prompts, answers or source passages. An audit-write failure blocks a successful release.
-- PDFs are not served or bundled into a public repository. Authorized citations may display excerpts through the authenticated API.
+- The repository includes the source PDFs for reproducible ingestion, but the running application does not serve PDF files. Authenticated citations display bounded evidence through the API; the generated index and operational artifacts remain private.
 
 ## Deployment shape
 
@@ -70,3 +70,5 @@ Sessions and app-level limits are process-local unless explicitly backed by dura
 ## Evaluation evidence
 
 The development set contains 20 cases and 23 requests including prior-turn context. It covers single-source facts, cross-document disagreement, follow-ups, missing information, scope, adversarial instructions, and access requests. Automatic checks verify response structure, expected source/page coverage and citation linkage. Source-review rubrics assess factual support and scope with the reviewer identity recorded; no regex score is labeled semantic correctness. Root's final acceptance set is separate and should be run after the implementation freeze. If it informs changes, its status must be described as a regression/acceptance set rather than untouched holdout evidence.
+
+The final paced deployed acceptance/regression result is a material design limitation: 5 of 10 final cases passed source assessment, with three available answers failing correctness or completeness and two outcomes unavailable. A successful browser sample and perfect native tool-order trajectory score demonstrate narrower properties and must not be presented as semantic accuracy.

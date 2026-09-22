@@ -9,7 +9,7 @@ Reviewer-only review completed on 2026-09-22.
 
 ## Result
 
-`AGENTS.md` passes this review. It accurately separates user-authorized requirements from current implementation choices and done criteria. It preserves the US$10 total Google-service ceiling, 10-hour target, source privacy, private deployment boundary, no-publication restriction, root-owned paid/cloud work, and no-new-approval-gate rule for already-authorized reversible work.
+At that review checkpoint, `AGENTS.md` accurately separated user-authorized requirements from implementation choices and done criteria, including the then-current no-publication restriction. The user subsequently authorized GitHub publication of the source code and three PDFs. That later authorization supersedes only the repository/PDF publication restriction; the Google-service ceiling, private runtime/deployment boundary, root-owned paid/cloud work and protection of credentials, indexes, logs and raw evaluation artifacts remain in force.
 
 The document’s implementation claims match the reviewed code: server-assigned role and authenticated sessions, current-invocation evidence requirements, researcher/reviewer/deterministic-gate sequencing, audit fail-closed behavior, private index constraints, response-status labeling, bounded calls/timeouts, and the custom versus native evaluation distinctions.
 

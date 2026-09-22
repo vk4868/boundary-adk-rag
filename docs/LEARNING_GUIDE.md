@@ -57,7 +57,7 @@ A useful interview answer is: “I chose a fixed researcher→reviewer→gate wo
 
 ## Why a page index rather than a vector database?
 
-The supplied corpus has only three documents and 156 pages. A fixed JSON index is easy to inspect, hash, package privately and query with dense/lexical hybrid ranking. It avoids provisioning a database merely to demonstrate similarity search.
+The supplied corpus has only three documents and 156 pages. The included manifest and PDFs make extraction reproducible, while a fixed JSON index is easy to inspect, hash, package privately for runtime and query with dense/lexical hybrid ranking. It avoids provisioning a database merely to demonstrate similarity search.
 
 The tradeoff is limited scale and update handling. Every query compares against the eligible pages; changing the corpus requires rebuilding and validating a new snapshot. A larger system would need an index suited to its scale, transactional metadata/ACL updates, retention policy and operational monitoring. A separate vector database would not remove the need for access checks or answer evaluation.
 
@@ -74,7 +74,7 @@ The current pipeline uses PDF text extraction; it does not claim full layout und
 | Cloud Run | Hosts the same containerized FastAPI/static app behind IAM | It does not make in-memory sessions durable across restarts |
 | IAM and runtime service account | Control who can invoke the private service and what the workload can access | The app still needs its own role/source checks |
 | Secret Manager | Supplies the application token without putting it in the image | It is not a multi-user identity provider |
-| Cloud Storage | Keeps a private derived index/manifest snapshot | A private bucket is not permission to redistribute source documents |
+| Cloud Storage | Keeps a private derived index/manifest snapshot | Publication of the repository PDFs does not make the generated index, credentials or runtime artifacts public |
 | Artifact Registry | Stores the private runtime image | The image remains sensitive because it contains derived source text/index data |
 | Cloud Build | Builds the explicit allowlisted context | An incorrectly selected build context can still upload private files |
 | Cloud Logging | Receives allowlisted operational JSON from stdout | It is not the conversation database and must not contain raw source text |

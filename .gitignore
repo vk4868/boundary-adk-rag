@@ -7,7 +7,7 @@ __pycache__/
 *.py[cod]
 .adk/
 data/
-corpus/
+corpus/*
 work/
 *.pdf
 *.jsonl
@@ -16,3 +16,10 @@ work/
 
 # Reproducible development evaluation definitions (no source excerpts)
 !evals/cases.jsonl
+
+# Exact corpus files authorized by the user for GitHub publication
+!corpus/manifest.json
+!corpus/pdf1.pdf
+!corpus/pdf2.pdf
+!corpus/pdf3.pdf
+!corpus/README.md

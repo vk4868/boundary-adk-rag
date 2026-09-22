@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "source_id": "junior_2025",
+      "title": "Junior Cricket Rules",
+      "version": "September 2025",
+      "scope": "Junior cricket by age division",
+      "competition": "Junior cricket",
+      "allowed_roles": [
+        "analyst"
+      ],
+      "path": "pdf1.pdf",
+      "sha256": "b9c9b870a6d449e418e9c89c3cac9f58634f9acc9d6de410eaf4d8ad9669ccbd"
+    },
+    {
+      "source_id": "mcc_2022",
+      "title": "MCC Laws of Cricket",
+      "version": "2017 Code, 3rd edition 2022",
+      "scope": "General laws as supplied in the 2022 edition",
+      "competition": "MCC",
+      "allowed_roles": [
+        "analyst"
+      ],
+      "path": "pdf2.pdf",
+      "sha256": "e5f6cd9b751a4b1d93520e09151ed9b473e451dc3c1ed5f3ad2ece65d9d27506"
+    },
+    {
+      "source_id": "usig_2023",
+      "title": "US Ismaili Games Cricket Rules",
+      "version": "Supplied copy; effective date unspecified",
+      "scope": "Tournament playing conditions; not general worldwide laws",
+      "competition": "US Ismaili Games",
+      "allowed_roles": [
+        "analyst"
+      ],
+      "path": "pdf3.pdf",
+      "sha256": "cd8cab8c234a2d5faf8e0e1ded3dbbfe60eb3761fedd8b670a6f06a91c5dea76"
+    }
+  ]
+}

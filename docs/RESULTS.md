@@ -40,7 +40,7 @@ Before corrected deployment validation, the first cloud acceptance run attempted
 
 ## Fixed corpus and release boundaries
 
-The private index contains 156 original PDF pages across three immutable documents, with 768-dimensional Vertex embeddings and zero provider truncations at ingestion. Its SHA-256 is `4518de9adb0d63f4217eeb52e917671ad802ca78dd6952264aa96cc1f8ac1cee`. The ingester recorded 322,961 billable characters. Original PDFs and the private index are not authorized for public redistribution.
+The private index contains 156 original PDF pages across three immutable documents, with 768-dimensional Vertex embeddings and zero provider truncations at ingestion. Its SHA-256 is `4518de9adb0d63f4217eeb52e917671ad802ca78dd6952264aa96cc1f8ac1cee`. The ingester recorded 322,961 billable characters. The repository includes the manifest and three source PDFs under the user's explicit publication authorization; the generated vector index, credentials, runtime logs and raw evaluation artifacts remain excluded.
 
 The release gate enforces current-invocation citation identity, source access, reviewer verdict and explicit scope rules. It cannot prove semantic completeness. The reviewer has no mandatory per-question-part completeness field; live tests found supported but incomplete answers that it approved. Source ranking, multi-turn citation compliance and provider deadlines also remain relevant limitations.
 

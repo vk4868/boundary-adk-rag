@@ -4,7 +4,7 @@ This is a draft for a project section or interview, not a claim of employment ex
 
 ## A clear project description
 
-“Boundary is a document research assistant built with Google ADK and Vertex AI. It retrieves private rulebook evidence, runs separate research and review agents, and uses a deterministic gate to enforce citation identity and source access before releasing an answer. Its sample corpus includes conflicting competition-specific cricket rules, which makes source scope a real part of the reasoning problem.”
+“Boundary is a document research assistant built with Google ADK and Vertex AI. It retrieves evidence from an included rulebook corpus, runs separate research and review agents, and uses a deterministic gate to enforce citation identity and source access before releasing an answer. Its sample corpus includes conflicting competition-specific cricket rules, which makes source scope a real part of the reasoning problem.”
 
 This description concerns the implemented design. When presenting it as a functioning live demo, first confirm the final application-level acceptance result. A framework import or an offline unit test does not establish that live inference works.
 
@@ -34,7 +34,7 @@ These describe a portfolio project, not client employment or production adoption
 
 **Problem:** People need answers from documents with different scopes and editions. A plausible answer that applies the wrong rulebook can be worse than an explicit “not enough evidence.”
 
-**Design:** Use a small fixed corpus to make behavior measurable. Give the researcher only three authorized document tools. Run a separate model review and a non-model release gate. Keep document content private while exposing source locations and operational trace metadata.
+**Design:** Use a small fixed, reproducible corpus to make behavior measurable. Give the researcher only three authorized document tools. Run a separate model review and a non-model release gate. Keep credentials, derived indexes, sessions and operational artifacts private while exposing checked source locations through the authenticated runtime.
 
 **Tradeoff:** The second model inference adds latency and cost, and the same model can repeat its own mistakes. Page-level retrieval is easy to trace but can struggle with tables or rules spread across pages. The fixed index and temporary sessions suit an intermediate demo rather than a multi-tenant production system.
 
@@ -51,7 +51,7 @@ These describe a portfolio project, not client employment or production adoption
 5. How did you verify that `.env` configuration actually reached Vertex's SDK client?
 6. What happens when audit storage fails, a model times out, or a schema cannot be parsed?
 7. Which metrics prove tool order or citation integrity, and which evaluate semantic correctness?
-8. Why is the index private even though it is derived from PDFs rather than the original files?
+8. Why does the generated index remain private even though the source PDFs are included in the repository?
 9. What are the limits of the current spending controls and temporary Cloud Run sessions?
 10. What did the final evaluation fail, and what did you change because of that evidence?
 

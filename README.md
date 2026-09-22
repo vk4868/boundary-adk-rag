@@ -2,9 +2,13 @@
 
 A governed document research assistant built with Google ADK, Vertex AI and FastAPI. Ask about a rule, compare competing rulebooks, or follow up on an earlier answer. Boundary retrieves authorized source pages, runs a second agent to review the evidence, and releases a response only after deterministic citation checks.
 
-The sample collection contains three private cricket rulebooks, making scope a real reasoning problem: general MCC Laws, junior competition formats, and US Ismaili Games tournament rules can differ. For example, a tournament's runner prohibition must not silently replace the conditional runner provisions of the supplied MCC Laws.
+![Boundary document research interface](docs/assets/boundary-demo.png)
 
-**Project status:** intermediate portfolio demo. Offline tests and live acceptance are recorded separately; see `docs/` and private `work/` evidence. This is not a production compliance or policy decision system. The PDFs are private inputs and are not included in a distributable repository.
+The included sample collection contains three cricket rulebooks, making scope a real reasoning problem: general MCC Laws, junior competition formats, and US Ismaili Games tournament rules can differ. For example, a tournament's runner prohibition must not silently replace the conditional runner provisions of the supplied MCC Laws.
+
+**Project status:** intermediate portfolio demo. Offline tests and live acceptance are recorded separately; see `docs/` and private `work/` evidence. This is not a production compliance or policy decision system. The repository includes the manifest and three user-authorized source PDFs so another developer can reproduce ingestion; generated indexes, credentials, logs, sessions and raw evaluation responses remain private.
+
+> **Measured limitation:** in the final paced deployed acceptance/regression run, **5 of 10 final cases passed source assessment**. Three available answers failed for factual completeness or correctness, and two final outcomes were unavailable. The successful two-turn browser sample and 3/3 native tool-order score do not replace this broader result. See [RESULTS.md](docs/RESULTS.md).
 
 ## What it demonstrates
 
@@ -30,15 +34,15 @@ Keep an existing configured `.env`; do not replace it with the offline sample. C
 
 The configured model target is Vertex `gemini-3.1-flash-lite` in `global`; embeddings use `gemini-embedding-001` in `us-central1`, 768 dimensions. Both model agents use the same configured generation model. Actual generation is opt-in through `APP_ENABLE_MODEL_CALLS` and the provider settings. The root operator controls cloud authentication and spend.
 
-Provide your authorized PDFs through a private `corpus/manifest.json`. The manifest defines stable source IDs, titles, supplied versions, competition scopes, allowed roles, paths and expected SHA-256 hashes. PDF paths must remain beneath the manifest directory. Originals are read without modification.
+The included `corpus/manifest.json` references the three repository PDFs and defines stable source IDs, titles, supplied versions, competition scopes, allowed roles, paths and expected SHA-256 hashes. PDF paths must remain beneath the manifest directory. Ingestion reads the originals without modification, so a developer can reproduce either the offline lexical snapshot or a Vertex embedding snapshot with their own configured Google project.
 
 ```bash
 # Offline extraction and lexical index (no cloud calls)
-.venv/bin/python scripts/ingest.py --manifest corpus/manifest.json \
+.venv/bin/python -m app.ingest --manifest corpus/manifest.json \
   --output work/offline-index.json --embedding-provider lexical
 
 # Real Vertex embeddings; this command incurs Google service usage
-.venv/bin/python scripts/ingest.py --manifest corpus/manifest.json \
+.venv/bin/python -m app.ingest --manifest corpus/manifest.json \
   --output data/index.json --embedding-provider vertex \
   --project YOUR_PROJECT --location us-central1 \
   --embedding-model gemini-embedding-001 --embedding-dimensions 768
@@ -84,7 +88,7 @@ This is a single-workspace demo with a shared access token and server-assigned r
 
 ADK 2.9.2 currently supports this `SequentialAgent` API but emits a deprecation notice recommending `Workflow`. Dependencies are pinned; a future migration requires re-running orchestration and governance tests.
 
-No repository publication or redistribution of the source PDFs is part of this build. The original RAG prototype and the separate policy/KPI project remain unchanged.
+The source code, manifest and three supplied PDFs are prepared for GitHub publication under the user's explicit authorization. Original author and copyright notices in the documents must remain intact; this documentation does not assert an additional license for the source documents. The derived vector index, credentials, runtime logs, sessions and raw evaluation artifacts are intentionally excluded. The original RAG prototype and the separate policy/KPI project remain unchanged.
 
 ## Private cloud access and cost
 

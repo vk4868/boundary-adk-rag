@@ -1,6 +1,6 @@
 # Run and demonstrate Boundary
 
-This is a private, single-workspace demo. Check the final acceptance evidence before presenting any live-flow or performance claim. The scripts below describe the intended demonstration; they are not a record that each live step passed.
+This is an IAM-private, single-workspace runtime demo built from a repository that includes its user-authorized sample PDFs. Check the final acceptance evidence before presenting any live-flow or performance claim. The scripts below describe the intended demonstration; they are not a record that each live step passed.
 
 ## Reproduce the local setup
 
@@ -45,7 +45,7 @@ To inspect the local snapshot hash without exposing its contents:
 shasum -a 256 data/index.json
 ```
 
-Ingestion commands are in the main README. A private manifest and the authorized original inputs are necessary to rebuild the snapshot. The repository by itself intentionally does not contain the PDFs or live index.
+Ingestion commands are in the main README. The repository includes `corpus/manifest.json` and its three referenced PDFs, so offline extraction can be reproduced directly. Rebuilding the Vertex snapshot additionally requires the developer's own Google project, ADC and explicit spend authorization. The generated live index is not included.
 
 Start the application:
 
@@ -115,7 +115,7 @@ Do not run this merely because the command is available. Coordinate the remainin
 ## Before a recording or interview
 
 - Close any terminal pane that displays credentials, raw private passages or unreviewed diagnostics.
-- Use only the app's authorized evidence view; do not distribute the source PDFs.
+- Use the included repository PDFs when showing original sources, and retain their original author and copyright notices. Keep the generated index, credentials, raw responses and unreviewed diagnostics private.
 - Start a new research session so the first question has an understandable context.
 - Verify which environment is being shown: local app with Vertex, or the IAM-proxied cloud app.
 - Quote only final measured results with their denominator and scope; keep pending metrics out of slides and résumé bullets.

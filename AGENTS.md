@@ -11,8 +11,8 @@ These are user requirements, not optional architecture preferences:
 - Demonstrate real Google ADK multi-agent orchestration, real tool calling, structured logging, evaluation, and code-enforced governance. A prompt that merely describes multiple agents does not satisfy this requirement.
 - Deliver a simple, polished web interface with document research, citations, follow-up questions, and comparisons across sources.
 - The user authorized at most **US$10 total Google service usage** for this build and sending the existing three PDFs to Google model services. Include embeddings, generation, retries/uncertain requests, build, storage and hosting in the tracked estimate. Existing trial credits are not permission to exceed this limit.
-- Public redistribution of the PDFs is **not authorized**. Do not publish a repository, documents, private derived index, container image containing that index, or sensitive evaluation artifacts without scope authorization.
-- The build timebox starts at **2026-09-22 11:06 UTC** and targets completion within **10 hours**, by **2026-09-22 21:06 UTC**. Prioritize a verified local app and time-box cloud deployment. Do not extend the deadline or spend ceiling silently.
+- The user explicitly authorized publishing this project's source code and the three existing corpus PDFs to GitHub on 23 September 2026. Publish only the reviewed repository allowlist. This authorization does not include credentials, private derived index, container image containing that index, raw evaluation responses, logs, or unrelated files.
+- The original overnight timebox was 2026-09-22 11:06–21:06 UTC. The user subsequently explicitly resumed the automation beyond that deadline. Continue the documented quality fixes and authorized GitHub publication; the original US$10 Google ceiling remains unchanged.
 - No public unauthenticated model endpoint and no external messages. Private Google Cloud deployment within the authorized scope is permitted and is coordinated by root.
 - Preserve immutable originals. Do not rewrite, rename, delete, or replace the PDFs in the original `RAG Project`.
 
@@ -54,7 +54,7 @@ This section describes the current design; it is not a request to add a new fram
 
 The `usig_2023` identifier does **not** establish an effective rule date. Do not infer current validity from file metadata or from a filename. Distinguish source disagreement explicitly; do not invent precedence between rulebooks. For example, a tournament runner prohibition and the supplied MCC runner conditions are different scopes, not interchangeable universal rules.
 
-The private manifest is `corpus/manifest.json`. Source paths are confined to its directory, hashes identify immutable inputs, and evidence IDs use `source_id:pNNNN` for one-based original PDF pages. The index loader validates the configured snapshot hash (required in production), unique sources, canonical contiguous pages, vector dimensions and finite values. A corpus change requires a new versioned snapshot with recorded hashes and re-running affected evaluations; it must not silently alter the evidence behind existing results.
+The published corpus manifest is `corpus/manifest.json`. Source paths are confined to its directory, hashes identify immutable inputs, and evidence IDs use `source_id:pNNNN` for one-based original PDF pages. The index loader validates the configured snapshot hash (required in production), unique sources, canonical contiguous pages, vector dimensions and finite values. A corpus change requires a new versioned snapshot with recorded hashes and re-running affected evaluations; it must not silently alter the evidence behind existing results.
 
 ## 4. Code-enforced guardrails
 
@@ -131,7 +131,8 @@ Start from this file, then `README.md`, `docs/ARCHITECTURE.md`, and the relevant
 | `tests/`, `evals/` | Offline boundary tests and clearly labeled evaluators |
 | `docs/REVIEW_*.md` | Reviewer findings, corrections and evidence limits |
 | `deploy/README.md`, `deploy/prepare_context.py`, `Dockerfile` | Root-owned private deployment workflow |
-| `corpus/`, `data/`, `.env`, `.adk/`, `work/` | Private inputs, index, credentials, runtime/evaluation artifacts; excluded from git |
+| `corpus/manifest.json`, `corpus/pdf1.pdf`, `corpus/pdf2.pdf`, `corpus/pdf3.pdf` | User-authorized published inputs; exact files allowed in git |
+| `data/`, `.env`, `.adk/`, `work/` | Private index, credentials, runtime/evaluation artifacts; excluded from git |
 
 Use the relocated project path; the old `adk-document-assistant` directory no longer exists. Preserve shell quoting around the space in `ADK RAG`.
 
@@ -151,13 +152,13 @@ Use `python -m pytest`, not an unrelated globally resolved `pytest` script. If t
 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 # Offline extraction only, explicitly separate from the live index.
-.venv/bin/python scripts/ingest.py --manifest corpus/manifest.json \
+.venv/bin/python -m app.ingest --manifest corpus/manifest.json \
   --output work/offline-index.json --embedding-provider lexical
 ```
 
 Root coordinates commands that use `--embedding-provider vertex`, `evals/run.py --execute`, `APP_ALLOW_ADK_CLI=true ... adk eval`, cloud builds/deployments, or any configured live `/api/chat` request. They incur or can incur authorized Google usage and require current accounting, not a new permission ritual when already coordinated.
 
-Use `work/` for scratch files. Keep original PDFs, corpus copies, embeddings, credentials, sessions and sensitive logs out of git. Use the explicit deployment upload allowlist; do not upload the whole workspace. Do not perform unrelated changes, destructive cleanup, or deletion of existing BigQuery resources. Stop only processes created for this task and identified precisely.
+Use `work/` for scratch files. Keep immutable originals in the separate prototype untouched. Only the three approved PDF copies and their manifest may enter git; keep embeddings, credentials, sessions and sensitive logs excluded. Use the explicit deployment upload allowlist; do not upload the whole workspace. Do not perform unrelated changes, destructive cleanup, or deletion of existing BigQuery resources. Stop only processes created for this task and identified precisely.
 
 ## 7. Private cloud deployment
 
@@ -180,6 +181,6 @@ A completion claim must identify what was actually achieved:
 5. The README, architecture, working rules, evaluation instructions, review evidence and limitations match the implementation. The user can run and demonstrate the result without reconstructing undocumented steps.
 6. If private cloud deployment completes within the timebox, verify the deployed browser→API→retrieval→model→review→gate path and record it. If deployment cannot complete, report the verified local result and precise cloud blocker without pretending deployment passed.
 
-Explicit exclusions: production/enterprise readiness certification; public corpus or repository publication; multi-tenant identity/SSO; durable multi-instance conversation storage; globally atomic billing caps; arbitrary uploads/web browsing/shell tools; automatic corpus updates; modification of the original prototype, policy/KPI project or existing BigQuery resources; and unmeasured business-impact or résumé claims.
+Explicit exclusions: production/enterprise readiness certification; publication outside the authorized source/PDF scope; multi-tenant identity/SSO; durable multi-instance conversation storage; globally atomic billing caps; arbitrary uploads/web browsing/shell tools; automatic corpus updates; modification of the original prototype, policy/KPI project or existing BigQuery resources; and unmeasured business-impact or résumé claims.
 
 Do not mark an incomplete evaluation, unreviewed material change, or untested deployment as validated. Report remaining work candidly and continue authorized fixes while time and budget remain.
