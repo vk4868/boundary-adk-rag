@@ -1,0 +1,13 @@
+{
+  "criteria": {
+    "tool_trajectory_avg_score": {
+      "threshold": 1.0,
+      "include_intermediate_responses_in_final": false,
+      "match_type": 1,
+      "ignore_args": true
+    }
+  },
+  "custom_metrics": null,
+  "user_simulator_config": null,
+  "live_model_config": null
+}

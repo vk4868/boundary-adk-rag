@@ -1,0 +1,25 @@
+# Defense in depth: private derived index is intentional; PDFs and secrets are not.
+*
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!.dockerignore
+!.gcloudignore
+!app/
+!app/**
+!scripts/
+!scripts/**
+!web/
+!web/**
+!data/
+data/*
+!data/index.json
+**/__pycache__/**
+**/*.pyc
+**/.env*
+**/.adk/**
+**/*.log
+**/*.jsonl
+**/*.pdf
+**/*.sqlite*
+**/*.db
