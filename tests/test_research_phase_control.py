@@ -1,6 +1,7 @@
 """Offline tests for required research phases and reviewer budget reservation."""
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import pytest
 from google.adk.models import LlmRequest
@@ -10,7 +11,13 @@ from google.genai import types
 from app.agents import build_agent
 from app.config import Settings
 from app.index import IndexRepository
-from app.models import ResearchDraft
+from app.models import (
+    CorpusIndex,
+    EmbeddingDescriptor,
+    PageRecord,
+    ResearchDraft,
+    SourceRecord,
+)
 from app.tools import BudgetExceeded, RunLedger
 
 
@@ -34,9 +41,35 @@ def pipeline(tmp_path):
         app_max_output_tokens=7200,
     )
     ledger = RunLedger("offline-phase-run")
+    repository = IndexRepository(settings)
+    repository._index = CorpusIndex(
+        schema_version=1,
+        embedding=EmbeddingDescriptor(provider="lexical"),
+        sources=[
+            SourceRecord(
+                source_id="source",
+                title="Test source",
+                version="test",
+                scope="test",
+                competition="MCC",
+                allowed_roles=["analyst"],
+                page_count=3,
+                sha256="a" * 64,
+            )
+        ],
+        pages=[
+            PageRecord(
+                evidence_id=f"source:p{page:04d}",
+                source_id="source",
+                page=page,
+                text=f"page {page}",
+            )
+            for page in (1, 2, 3)
+        ],
+    )
     agent = build_agent(
         settings,
-        IndexRepository(settings),
+        repository,
         ledger,
         settings.app_server_role,
     )
@@ -44,14 +77,13 @@ def pipeline(tmp_path):
 
 
 def _request(researcher) -> LlmRequest:
-    tools = {tool.name: tool for tool in researcher.tools}
     formatter = SetModelResponseTool(ResearchDraft)
-    tools[formatter.name] = formatter
-    return LlmRequest(
+    request = LlmRequest(
         model="offline",
         contents=[types.Content(role="user", parts=[types.Part(text="question")])],
-        tools_dict=tools,
     )
+    request.append_tools([formatter, *researcher.tools])
+    return request
 
 
 def _allowed(request: LlmRequest) -> tuple[str, list[str]]:
@@ -79,6 +111,7 @@ def test_required_tool_phases_use_native_function_calling(pipeline):
     ledger.listed_sources_successfully = True
     ledger.successful_searches = 1
     ledger.last_search_hit_ids = {"source:p0001"}
+    ledger.issued_evidence_ids = {"source:p0001"}
     request = _request(researcher)
     callback(context, request)
     assert _allowed(request) == ("ANY", ["read_evidence"])
@@ -104,6 +137,7 @@ def test_read_evidence_allows_auto_until_reserved_formatter_call(pipeline):
     ledger.listed_sources_successfully = True
     ledger.successful_searches = 1
     ledger.last_search_hit_ids = {"source:p0001"}
+    ledger.issued_evidence_ids = {"source:p0001"}
     ledger.read_evidence_ids = {"source:p0001"}
 
     request = _request(researcher)
@@ -116,12 +150,82 @@ def test_read_evidence_allows_auto_until_reserved_formatter_call(pipeline):
     assert _allowed(request) == ("ANY", ["set_model_response"])
 
 
+def test_reading_explicit_adjacent_context_satisfies_current_search_read(pipeline):
+    _settings, ledger, agent = pipeline
+    researcher = agent.sub_agents[0]
+    ledger.listed_sources_successfully = True
+    ledger.successful_searches = 1
+    ledger.last_search_hit_ids = {"source:p0002"}
+    ledger.last_search_issued_ids = {
+        "source:p0001",
+        "source:p0002",
+        "source:p0003",
+    }
+    ledger.issued_evidence_ids = set(ledger.last_search_issued_ids)
+    ledger.read_evidence_ids = {"source:p0003"}
+
+    request = _request(researcher)
+    researcher.before_model_callback(FakeContext("document_researcher"), request)
+
+    assert _allowed(request) == ("AUTO", [])
+
+
+def test_ordinary_read_gets_one_correction_then_forces_abstention(pipeline):
+    _settings, ledger, agent = pipeline
+    researcher = agent.sub_agents[0]
+    ledger.listed_sources_successfully = True
+    ledger.successful_searches = 1
+    ledger.last_search_hit_ids = {"source:p0002"}
+    ledger.last_search_issued_ids = {"source:p0001", "source:p0002"}
+    ledger.issued_evidence_ids = set(ledger.last_search_issued_ids)
+    ledger.ordinary_read_failures = 1
+
+    corrective = _request(researcher)
+    researcher.before_model_callback(FakeContext("document_researcher"), corrective)
+    assert _allowed(corrective) == ("ANY", ["read_evidence"])
+    assert "one corrective read" in str(corrective.config.system_instruction)
+
+    ledger.ordinary_read_failures = 2
+    abstain = _request(researcher)
+    researcher.before_model_callback(FakeContext("document_researcher"), abstain)
+    assert _allowed(abstain) == ("ANY", ["set_model_response"])
+    assert "insufficient_evidence" in str(abstain.config.system_instruction)
+
+
+def test_original_question_state_is_overwritten_for_each_invocation(pipeline):
+    _settings, ledger, agent = pipeline
+    state = {"original_question": "stale prior question"}
+    first = SimpleNamespace(
+        invocation_id="first",
+        user_content=types.Content(
+            role="user", parts=[types.Part(text="current first question")]
+        ),
+        state=state,
+    )
+    agent.before_agent_callback(first)
+    assert state["original_question"] == "current first question"
+    assert ledger.original_question == "current first question"
+
+    second = SimpleNamespace(
+        invocation_id="second",
+        user_content=types.Content(
+            role="user", parts=[types.Part(text="new question")]
+        ),
+        state=state,
+    )
+    agent.before_agent_callback(second)
+    assert state["original_question"] == "new question"
+    assert ledger.original_question == "new question"
+    assert "{original_question}" in agent.sub_agents[1].instruction
+
+
 def test_reviewer_slot_cannot_be_consumed_by_researcher(pipeline):
     settings, ledger, agent = pipeline
     researcher, reviewer = agent.sub_agents[:2]
     ledger.listed_sources_successfully = True
     ledger.successful_searches = 1
     ledger.last_search_hit_ids = {"source:p0001"}
+    ledger.issued_evidence_ids = {"source:p0001"}
     ledger.read_evidence_ids = {"source:p0001"}
     ledger.model_calls = settings.app_max_model_calls - 1
 
@@ -147,6 +251,7 @@ def test_boundary_reads_then_formats_and_cannot_start_another_search(pipeline):
     ledger.listed_sources_successfully = True
     ledger.successful_searches = 2
     ledger.last_search_hit_ids = {"source:p0002"}
+    ledger.issued_evidence_ids = {"source:p0001", "source:p0002"}
     ledger.read_evidence_ids = {"source:p0001"}
     ledger.model_calls = settings.app_max_model_calls - 3
     request = _request(researcher)

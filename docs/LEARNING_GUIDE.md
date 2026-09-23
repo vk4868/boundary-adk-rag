@@ -43,8 +43,8 @@ Suppose the question is: “In the supplied US Ismaili Games rules, how many ove
 2. `ChatService.chat()` resolves an opaque session owned by that principal. The audit preflight must succeed before model work. A fresh ledger tracks this request's evidence and limits.
 3. ADK runs the researcher. The intended tool path is to list the available scopes, search the authorized collection, and read the selected page. Source filters are checked before embedding/retrieval.
 4. The researcher returns a `ResearchDraft` of claims and evidence IDs. The draft is not yet an answer the web user receives.
-5. The reviewer performs a separate model inference over the draft and evidence. It checks support, relevance, scope and edition handling.
-6. The deterministic gate requires the reviewer to pass, the checked claim count to match, and each citation to refer to an authorized page read during this invocation. It also applies explicit source-scope rules.
+5. The reviewer performs a separate model inference over the original question, draft and evidence. It maps requested question parts to draft claims and checks support, conditions, scope and edition handling.
+6. The deterministic gate requires the reviewer to pass, the coverage mapping and checked claim count to be consistent, and each citation to refer to an authorized page read during this invocation. It also applies explicit source-scope rules. A valid mapping cannot prove that the model understood every requested part correctly.
 7. The service rejects stale request/session identity, writes final metadata, and returns the governed response. The UI validates the response again, renders claims as text, and opens the cited page excerpt on demand.
 
 This sequence is the design. The run's actual event metadata and evaluation record establish what happened in a particular execution. Do not infer a successful tool path from the diagram alone.
@@ -52,6 +52,10 @@ This sequence is the design. The run's actual event metadata and evaluation reco
 ## Why use two model agents?
 
 Separating research and review makes the responsibilities inspectable and allows the reviewer to reject a draft. It also costs another inference and increases latency. Both agents use the same model, so their errors can be correlated; “separate reviewer” does not mean statistically independent verification. The deterministic gate and source-based assessment are additional boundaries, not proof that all hallucinations disappear.
+
+The resumed evaluation exposed a narrower lesson: structured question-part checks and valid citations still missed section-level scope. A cited junior-rule page contained genuine bowling limits, but its section applied to two-day games for specified boys' formats. The answer omitted that qualification. Even the initial reviewer-only source assessment missed it; a contextual re-check corrected the targeted result from 4/5 to 3/5 semantic passes and preserved the earlier record. In an interview, explain this as an observed limitation and the importance of checking governing headings across pages—not proof that adding review fields makes answers reliable.
+
+The final browser checks provide a second lesson: both attempted first turns failed validation, so neither dependent follow-up ran. Successful API/native cases and passing offline tests did not establish a reliable live browser walkthrough. The next work should identify the exact failing schema boundary on that original prompt, retain fail-closed release checks, and repeat the full interaction after a reviewed fix. Keep this availability problem separate from the known section-scope error and provider resource exhaustion; they require different evidence and remedies. The prioritized remaining work is recorded in [QUALITY_CONTRACT.md](QUALITY_CONTRACT.md).
 
 A useful interview answer is: “I chose a fixed researcher→reviewer→gate workflow because the order is a requirement of the product. I did not need an open-ended team of agents deciding their own permissions.”
 
@@ -64,6 +68,8 @@ The tradeoff is limited scale and update handling. Every query compares against 
 Pages preserve a simple source locator, but they are not perfect semantic chunks. Tables and multi-page rules can be difficult to extract or retrieve. The current pipeline combines normalized BM25 and cosine scores, preserves the current question alongside model search refinements, and selects a query-focused search preview. These changes address observed query drift and previews that hid a relevant section below the page opening; they do not prove that the model selects the right evidence.
 
 The current pipeline uses PDF text extraction; it does not claim full layout understanding. More sophisticated parsing/chunking should be justified by measured retrieval failures.
+
+Rules can continue onto another page. Search therefore exposes adjacent same-source pages with bounded context previews: an exact requested provision when present, otherwise the previous page's tail or next page's head. The model must still request their actual contents through `read_evidence`. Issuing an ID, returning a snippet, and recording a full read are three distinct states. An invalid read consumes its attempted tool call and returns only previously issued authorized suggestions. One ordinary corrected read may follow per invocation; a new search cannot reset that allowance, and repeated failure must finalize safely within the same budget.
 
 ## What each Google Cloud service does
 
@@ -90,6 +96,8 @@ Generation is configured for `global`, while embeddings and the runtime use `us-
 **Reserve the whole workflow.** A researcher can use its entire call allowance searching and leave no inference for review. Boundary constrains required tool phases through the model's function-calling configuration, prevents a late new search that cannot fit a read plus finalization, and reserves a separate reviewer call. The code sets the HTTP ADK `RunConfig` explicitly; a value in `.env` is not automatically an SDK environment variable. Requiring a tool path does not solve an answer that retrieves the wrong age division or format, so source-based assessment remains necessary.
 
 **Repair before release, within the same budget.** The researcher can cite a search result that it never opened. A `before_tool_callback` can intercept its structured finalization once and require an actual read of the missing authorized pages. It reserves space for the read, revised draft and reviewer. This repairs a missing action; it does not declare a citation valid or bypass the final gate. Compare the pending repair IDs in `app/agents.py` with the only successful read operation that updates evidence state in `app/tools.py`.
+
+**Expose valid choices before a tool call.** The researcher can also invent a page ID and waste its remaining calls correcting it. The outbound read schema now enumerates only authorized IDs already issued in the current invocation. This is a request-local copy, so one turn's choices cannot remain in a later turn's tool schema. The server still checks every actual argument. A constrained declaration can reduce invalid choices; it does not decide which evidence answers the question.
 
 **Test a clean process, not only a warm local server.** ADK inferred schema/tool support from the process Vertex flag, while local dotenv settings configured the client separately. Cloud and native runs therefore took a different formatting path and failed. `GovernedGemini` now selects that capability explicitly, with clean true/false environment tests. This is why configuration parity belongs in deployment validation.
 

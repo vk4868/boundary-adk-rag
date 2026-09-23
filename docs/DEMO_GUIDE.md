@@ -2,6 +2,8 @@
 
 This is an IAM-private, single-workspace runtime demo built from a repository that includes its user-authorized sample PDFs. Check the final acceptance evidence before presenting any live-flow or performance claim. The scripts below describe the intended demonstration; they are not a record that each live step passed.
 
+**Current limitation:** both final browser sequences failed on their first submitted question with `ValidationError`; neither follow-up ran. The current revision is not a reliable live recruiter walkthrough. Use the architecture, offline checks and accurately labeled saved evaluation evidence for a presentation until the failing interaction has been diagnosed and revalidated. See [the final cloud and browser review](REVIEW_CLOUD_QUALITY.md). Paid verification has stopped; these instructions do not authorize another run.
+
 ## Reproduce the local setup
 
 From the configured project:

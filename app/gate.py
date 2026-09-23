@@ -90,11 +90,54 @@ def apply_gate(
 ) -> GateResult:
     review_passed = (
         review.verdict == "pass"
+        and review.answer_status == draft.status
         and review.citation_support_ok
         and review.scope_and_version_ok
         and not review.issues
         and review.checked_claims == len(draft.claims)
     )
+    if draft.status == "answered":
+        coverage_passed = (
+            review.all_parts_supported
+            and review.conditions_preserved
+            and not review.unsupported_absence_claim_indices
+            and not review.abstention_justified
+        )
+        for part in review.parts:
+            if not part.supported or not part.claim_indices:
+                coverage_passed = False
+                break
+            for claim_index in part.claim_indices:
+                if claim_index >= len(draft.claims):
+                    coverage_passed = False
+                    break
+                if any(
+                    evidence_id not in ledger.read_evidence_ids
+                    for evidence_id in draft.claims[claim_index].evidence_ids
+                ):
+                    coverage_passed = False
+                    break
+            if not coverage_passed:
+                break
+        if any(
+            claim_index >= len(draft.claims)
+            for claim_index in review.unsupported_absence_claim_indices
+        ):
+            coverage_passed = False
+        review_passed = review_passed and coverage_passed
+    else:
+        abstention_passed = (
+            not draft.claims
+            and review.checked_claims == 0
+            and not review.all_parts_supported
+            and all(
+                not part.supported and not part.claim_indices
+                for part in review.parts
+            )
+            and not review.unsupported_absence_claim_indices
+            and review.abstention_justified
+        )
+        review_passed = review_passed and abstention_passed
     if not review_passed:
         return _rejected(
             request_id=request_id,

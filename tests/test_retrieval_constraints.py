@@ -5,7 +5,12 @@ from types import SimpleNamespace
 import pytest
 
 from app.config import Settings
-from app.index import IndexRepository, _bm25_scores, _query_focused_snippet
+from app.index import (
+    IndexRepository,
+    _adjacent_preview,
+    _bm25_scores,
+    _query_focused_snippet,
+)
 from app.models import CorpusIndex, EmbeddingDescriptor, PageRecord, SourceRecord
 from app.tools import RunLedger, build_tools
 
@@ -101,6 +106,129 @@ def test_focused_snippet_selects_relevant_later_passage():
 
     assert len(snippet) <= 700
     assert relevant in snippet
+
+
+def test_focused_snippet_keeps_numeric_qualifier_atomic():
+    opening = (
+        "The changed rule for Under 11 boys requires the bowling end to remain "
+        "the same for the innings. "
+    )
+    page = PageRecord(
+        evidence_id="rules:p0001",
+        source_id="rules",
+        page=1,
+        text=(
+            opening
+            + "unrelated filler " * 80
+            + "Under 12 boys junior rules Rule 11.2 changed. " * 25
+        ),
+    )
+    query = "What changed for Under 11 boys about the bowling end?"
+    _scores, frequencies = _bm25_scores(query, [page])
+
+    snippet = _query_focused_snippet(
+        page.text,
+        query,
+        document_frequency=frequencies,
+        document_count=1,
+    )
+
+    assert opening.strip() in snippet
+    assert "Rule 11.2 changed" not in snippet
+
+
+def test_source_filtered_search_preserves_dotted_reference_for_neighbor_preview(
+    tmp_path, monkeypatch
+):
+    settings = _settings(
+        tmp_path,
+        app_embedding_provider="vertex",
+        google_cloud_project="offline-never-call",
+        app_embedding_dimensions=2,
+    )
+    source = SourceRecord(
+        source_id="mcc_rules",
+        title="MCC Laws of Cricket",
+        version="test",
+        scope="general laws",
+        competition="MCC",
+        allowed_roles=["analyst"],
+        page_count=3,
+        sha256="4" * 64,
+    )
+    exact_rule = (
+        "LAW 17 THE OVER 17.1 Number of balls. The ball shall be bowled from "
+        "each end alternately in overs of 6 valid balls."
+    )
+    repository = IndexRepository(settings)
+    repository._index = CorpusIndex(
+        schema_version=1,
+        embedding=EmbeddingDescriptor(
+            provider="vertex",
+            model=settings.app_embedding_model,
+            location=settings.embedding_location,
+            dimensions=2,
+            task_type="RETRIEVAL_DOCUMENT",
+            billable_character_count=1,
+            truncated_page_count=0,
+        ),
+        sources=[source],
+        pages=[
+            PageRecord(
+                evidence_id="mcc_rules:p0001",
+                source_id="mcc_rules",
+                page=1,
+                text="prefix " * 100 + exact_rule + " suffix " * 100,
+                embedding=[-1.0, 0.0],
+            ),
+            PageRecord(
+                evidence_id="mcc_rules:p0002",
+                source_id="mcc_rules",
+                page=2,
+                text="Compare the bowling end rule and bowler changing ends.",
+                embedding=[1.0, 0.0],
+            ),
+            PageRecord(
+                evidence_id="mcc_rules:p0003",
+                source_id="mcc_rules",
+                page=3,
+                text="Unrelated scoring material.",
+                embedding=[0.0, 1.0],
+            ),
+        ],
+    )
+    monkeypatch.setattr(repository, "_query_embedding", lambda *_args: [1.0, 0.0])
+    query = "Compare the bowling-end rule in MCC Law 17.1"
+
+    hits = repository.search(
+        query,
+        lexical_query=query,
+        role="analyst",
+        top_k=1,
+        source_ids=["mcc_rules"],
+    )
+
+    assert hits[0].evidence_id == "mcc_rules:p0002"
+    assert hits[0].adjacent_previews[0].evidence_id == "mcc_rules:p0001"
+    assert exact_rule in hits[0].adjacent_previews[0].snippet
+
+
+def test_neighbor_preview_does_not_prefix_match_longer_dotted_reference():
+    text = (
+        "head material " * 80
+        + "WRONG ANCHOR 17.10 unrelated provision "
+        + "middle material " * 80
+        + "TAIL MARKER relevant boundary context"
+    )
+
+    preview = _adjacent_preview(
+        text,
+        "requested Law 17.1",
+        relation="previous",
+    )
+
+    assert "TAIL MARKER" in preview
+    assert "WRONG ANCHOR" not in preview
 
 
 def test_vertex_search_hybrid_reranks_exact_constraints_without_provider_call(

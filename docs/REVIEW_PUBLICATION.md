@@ -1,5 +1,7 @@
 # GitHub publication review
 
+Historical review of the original 83-file publication at commit `985a4412d161a52687d608e97816e5a4300a656b`. Later quality changes and their results are covered by the quality review records.
+
 On 23 September 2026, the project owner explicitly authorized publishing the project source and three supplied PDF documents to GitHub. This does not authorize publishing credentials, generated indexes, container images, raw evaluation responses, logs or sessions.
 
 A reviewer-only Terra agent independently reviewed the publication scope, exact corpus allowlist, preserved original hashes, deployment exclusions and documentation claims. No unresolved publication finding remained. The README prominently retains the final 5/10 paced cloud source-assessment result; publication is not a new answer-quality validation.

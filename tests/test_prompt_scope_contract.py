@@ -9,6 +9,7 @@ from app.models import (
     CorpusIndex,
     EmbeddingDescriptor,
     PageRecord,
+    QuestionPartAssessment,
     ResearchDraft,
     ReviewDecision,
     SourceRecord,
@@ -64,9 +65,22 @@ def _gate(tmp_path, second_claim: str):
     )
     review = ReviewDecision(
         verdict="pass",
+        answer_status="answered",
         checked_claims=2,
         citation_support_ok=True,
         scope_and_version_ok=True,
+        parts=[
+            QuestionPartAssessment(
+                part_id="answer",
+                description="requested answer",
+                supported=True,
+                claim_indices=[0, 1],
+            )
+        ],
+        all_parts_supported=True,
+        conditions_preserved=True,
+        unsupported_absence_claim_indices=[],
+        abstention_justified=False,
     )
     return apply_gate(
         request_id=ledger.request_id,

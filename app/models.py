@@ -5,10 +5,18 @@ from __future__ import annotations
 import math
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 
 RoleName = str
+EVIDENCE_ID_PATTERN = r"^[a-z0-9][a-z0-9_-]{1,63}:p\d{4,}$"
 
 
 class StrictModel(BaseModel):
@@ -60,7 +68,7 @@ class SourceRecord(StrictModel):
 
 
 class PageRecord(StrictModel):
-    evidence_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,63}:p\d{4,}$")
+    evidence_id: str = Field(pattern=EVIDENCE_ID_PATTERN)
     source_id: str
     page: int = Field(ge=1)
     text: str
@@ -124,6 +132,12 @@ class PublicSource(StrictModel):
     page_count: int
 
 
+class AdjacentEvidencePreview(StrictModel):
+    evidence_id: str = Field(pattern=EVIDENCE_ID_PATTERN)
+    relation: Literal["previous", "next"]
+    snippet: str = Field(min_length=1, max_length=350)
+
+
 class SearchHit(StrictModel):
     evidence_id: str
     source_id: str
@@ -132,8 +146,28 @@ class SearchHit(StrictModel):
     scope: str
     page: int
     snippet: str
+    adjacent_evidence_ids: list[str] = Field(default_factory=list, max_length=2)
+    adjacent_previews: list[AdjacentEvidencePreview] = Field(
+        default_factory=list, max_length=2
+    )
     score: float
     retrieval_method: Literal["lexical", "vertex_hybrid"]
+
+    @field_validator("adjacent_evidence_ids")
+    @classmethod
+    def unique_adjacent_evidence_ids(cls, evidence_ids: list[str]) -> list[str]:
+        if len(evidence_ids) != len(set(evidence_ids)):
+            raise ValueError("adjacent_evidence_ids must be unique")
+        return evidence_ids
+
+    @model_validator(mode="after")
+    def previews_match_adjacent_ids(self) -> "SearchHit":
+        preview_ids = [preview.evidence_id for preview in self.adjacent_previews]
+        if len(preview_ids) != len(set(preview_ids)):
+            raise ValueError("adjacent preview evidence IDs must be unique")
+        if preview_ids != self.adjacent_evidence_ids:
+            raise ValueError("adjacent previews must match adjacent_evidence_ids")
+        return self
 
 
 class ClaimDraft(StrictModel):
@@ -162,19 +196,90 @@ class ResearchDraft(StrictModel):
         return self
 
 
+class QuestionPartAssessment(StrictModel):
+    part_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,23}$")
+    description: str = Field(min_length=3, max_length=160)
+    supported: bool
+    claim_indices: list[StrictInt] = Field(default_factory=list, max_length=12)
+
+    @field_validator("description")
+    @classmethod
+    def meaningful_description(cls, description: str) -> str:
+        cleaned = " ".join(description.split())
+        if len(cleaned) < 3 or not any(character.isalnum() for character in cleaned):
+            raise ValueError("question-part description must be meaningful")
+        return cleaned
+
+    @field_validator("claim_indices")
+    @classmethod
+    def unique_nonnegative_claim_indices(
+        cls, claim_indices: list[int]
+    ) -> list[int]:
+        if len(claim_indices) != len(set(claim_indices)):
+            raise ValueError("question-part claim_indices must be unique")
+        if any(index < 0 for index in claim_indices):
+            raise ValueError("question-part claim_indices must be non-negative")
+        return claim_indices
+
+    @model_validator(mode="after")
+    def mapping_matches_support(self) -> "QuestionPartAssessment":
+        if self.supported and not self.claim_indices:
+            raise ValueError("supported question parts require mapped claims")
+        if not self.supported and self.claim_indices:
+            raise ValueError("unsupported question parts cannot map claims")
+        return self
+
+
 class ReviewDecision(StrictModel):
     verdict: Literal["pass", "fail"]
+    answer_status: Literal["answered", "insufficient_evidence"]
     checked_claims: int = Field(ge=0, le=12)
     citation_support_ok: bool
     scope_and_version_ok: bool
+    parts: list[QuestionPartAssessment] = Field(min_length=1, max_length=8)
+    all_parts_supported: bool
+    conditions_preserved: bool
+    unsupported_absence_claim_indices: list[StrictInt] = Field(max_length=12)
+    abstention_justified: bool
     issues: list[str] = Field(default_factory=list, max_length=12)
+
+    @field_validator("unsupported_absence_claim_indices")
+    @classmethod
+    def unique_nonnegative_absence_indices(cls, indices: list[int]) -> list[int]:
+        if len(indices) != len(set(indices)):
+            raise ValueError("unsupported absence claim indices must be unique")
+        if any(index < 0 for index in indices):
+            raise ValueError("unsupported absence claim indices must be non-negative")
+        return indices
 
     @model_validator(mode="after")
     def pass_is_consistent(self) -> "ReviewDecision":
+        part_ids = [part.part_id for part in self.parts]
+        descriptions = [" ".join(part.description.casefold().split()) for part in self.parts]
+        if len(part_ids) != len(set(part_ids)):
+            raise ValueError("question-part IDs must be unique")
+        if len(descriptions) != len(set(descriptions)):
+            raise ValueError("question-part descriptions must be unique")
+        if self.all_parts_supported != all(part.supported for part in self.parts):
+            raise ValueError("all_parts_supported must match the part assessments")
         if self.verdict == "pass" and (
             not self.citation_support_ok or not self.scope_and_version_ok or self.issues
         ):
             raise ValueError("pass verdict must have both checks true and no issues")
+        if self.verdict == "pass" and self.answer_status == "answered" and (
+            not self.all_parts_supported
+            or not self.conditions_preserved
+            or self.unsupported_absence_claim_indices
+            or self.abstention_justified
+        ):
+            raise ValueError("a passed answer must satisfy every completeness check")
+        if self.verdict == "pass" and self.answer_status == "insufficient_evidence" and (
+            self.checked_claims != 0
+            or self.all_parts_supported
+            or self.unsupported_absence_claim_indices
+            or not self.abstention_justified
+        ):
+            raise ValueError("a passed abstention must be justified and map no claims")
         return self
 
 

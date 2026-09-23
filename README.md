@@ -8,14 +8,15 @@ The included sample collection contains three cricket rulebooks, making scope a 
 
 **Project status:** intermediate portfolio demo. Offline tests and live acceptance are recorded separately; see `docs/` and private `work/` evidence. This is not a production compliance or policy decision system. The repository includes the manifest and three user-authorized source PDFs so another developer can reproduce ingestion; generated indexes, credentials, logs, sessions and raw evaluation responses remain private.
 
-> **Measured limitation:** in the final paced deployed acceptance/regression run, **5 of 10 final cases passed source assessment**. Three available answers failed for factual completeness or correctness, and two final outcomes were unavailable. The successful two-turn browser sample and 3/3 native tool-order score do not replace this broader result. See [RESULTS.md](docs/RESULTS.md).
+> **Measured limitation:** in the latest paced deployed acceptance/regression run, **5 of 10 final cases passed source assessment**. One returned answer omitted junior-format restrictions; four final cases were unavailable because of provider resource exhaustion. Ten of eleven planned turns ran because a failed setup prevented its follow-up. Both latest browser-demo attempts also failed during workflow validation. Stronger structural checks have not established a reliable live demo. See [RESULTS.md](docs/RESULTS.md).
 
 ## What it demonstrates
 
 - A real ADK `SequentialAgent`: a tool-using researcher, a separate reviewer `LlmAgent`, then a deterministic gate agent.
 - Three typed tools: `list_sources`, `search_documents`, and `read_evidence`.
 - Actual Vertex embeddings with a fixed page/vector snapshot and local BM25/cosine hybrid retrieval; optional explicitly labeled lexical mode for offline work.
-- Source role allowlists applied before retrieval and rechecked at release; current-invocation evidence IDs; stable page citations; source/edition scope checks.
+- Source role allowlists applied before retrieval and rechecked at release; current-invocation evidence IDs advertised in request-local tool schemas; actual page reads required before citation release.
+- Typed reviewer checks for question-part coverage, conditions and unsupported absence claims; deterministic validation rejects inconsistent or stale outputs.
 - Authenticated web research with follow-up sessions, source evidence panels, citations, and visible run counters.
 - Metadata audit logs, bounded model/tool calls, token accounting including thinking, and privacy-aware evaluation evidence.
 
@@ -58,6 +59,8 @@ Open the local URL, connect with your workspace token, and ask a question. Token
 
 ## Try the workflow
 
+These are walkthrough steps, not a current success claim. The earlier browser sequence passed, but both attempts on the latest revision failed before an answer; review [current results](docs/RESULTS.md) before relying on a live interview demo.
+
 1. Ask: “In the supplied US Ismaili Games rules, how many overs may one bowler bowl?”
 2. Open the numbered citation and inspect the source page text.
 3. Ask: “Can an injured batter have a runner in that tournament?”
@@ -80,7 +83,7 @@ node --test tests/web_response_validator.test.js
 
 The custom HTTP development harness contains 20 cases/23 turns and records structural integrity, expected page/source coverage, and explicit source-review rubrics. It does not use an LLM judge or label page matches as factual correctness. See [evals/README.md](evals/README.md). The separate acceptance set was first used after the development freeze; integration failures informed a compatibility correction, so subsequent runs are labeled acceptance/regression. Evaluation files with raw responses remain private under `work/`.
 
-The [native ADK evaluation artifact](evals/README.md#native-adk-evaluation-artifact) has three development cases and four turns. The corrected live native run passed all three tool-order cases across four turns. Source assessment credited only one of three final answers as complete; tool-order scoring is not semantic validation. The custom HTTP harness is the separate 20-case/23-turn development evaluation and must not be described as native ADK Eval execution or semantic validation.
+The [native ADK evaluation artifact](evals/README.md#native-adk-evaluation-artifact) has three development cases and four turns. The latest live native run passed all three tool-order cases across four turns. Source assessment credited two of three final answers as complete; the answerable follow-up was safely rejected. Tool-order scoring is not semantic validation. The custom HTTP harness is the separate 20-case/23-turn development evaluation and must not be described as native ADK Eval execution or semantic validation.
 
 ## Known limits
 
@@ -88,7 +91,7 @@ This is a single-workspace demo with a shared access token and server-assigned r
 
 ADK 2.9.2 currently supports this `SequentialAgent` API but emits a deprecation notice recommending `Workflow`. Dependencies are pinned; a future migration requires re-running orchestration and governance tests.
 
-The source code, manifest and three supplied PDFs are prepared for GitHub publication under the user's explicit authorization. Original author and copyright notices in the documents must remain intact; this documentation does not assert an additional license for the source documents. The derived vector index, credentials, runtime logs, sessions and raw evaluation artifacts are intentionally excluded. The original RAG prototype and the separate policy/KPI project remain unchanged.
+The source code, manifest and three supplied PDFs are published under the user's explicit authorization. Original author and copyright notices in the documents must remain intact; this documentation does not assert an additional license for the source documents. The derived vector index, credentials, runtime logs, sessions and raw evaluation artifacts are intentionally excluded. The original RAG prototype and the separate policy/KPI project remain unchanged.
 
 ## Private cloud access and cost
 

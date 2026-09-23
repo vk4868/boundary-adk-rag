@@ -25,8 +25,10 @@ Cricket is a manageable demonstration domain. Do not claim that the same impleme
 ## Ready-to-use résumé bullets
 
 - Built Boundary, a Google ADK and Vertex AI document research assistant over 156 PDF pages, combining hybrid retrieval, typed tools, separate research/review agents and deterministic citation/access checks.
-- Implemented invocation-scoped evidence controls, bounded repair and metadata audit; verified 88 offline tests plus 12 subtests and three native ADK tool-trajectory cases covering four turns, reporting answer quality separately.
-- Deployed to IAM-private Cloud Run with a dedicated runtime identity, Secret Manager and an immutable private index; verified an authenticated browser-to-model sourced answer and documented provider-availability and semantic-completeness limitations.
+- Implemented invocation-scoped evidence controls, bounded repair and metadata audit; verified 119 offline tests plus 12 subtests and three native ADK tool-trajectory cases covering four turns, reporting answer quality separately.
+- Deployed to IAM-private Cloud Run with a dedicated runtime identity, Secret Manager and an immutable private index; evaluated native and deployed behavior while documenting provider-availability, response-validation and semantic-completeness limitations.
+
+The latest cloud source assessment is 5/10 and both latest browser attempts failed before an answer. Present this as an intermediate engineering prototype; do not promise a reliable live demo until those failures are fixed and rechecked.
 
 These describe a portfolio project, not client employment or production adoption. The build was AI-assisted. Adapt the phrasing to the work you can explain and demonstrate personally. Performance and source-review results—including failures—belong in [RESULTS.md](RESULTS.md); a native tool-order pass is not an answer-correctness claim. Do not claim business impact, enterprise readiness, zero hallucinations or a public recruiter endpoint.
 

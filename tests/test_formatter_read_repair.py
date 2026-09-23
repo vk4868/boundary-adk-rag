@@ -21,6 +21,7 @@ from app.models import (
     PageRecord,
     ResearchDraft,
     ReviewDecision,
+    QuestionPartAssessment,
     SourceRecord,
 )
 from app.tools import RunLedger
@@ -136,14 +137,13 @@ def _tool_context() -> SimpleNamespace:
 
 
 def _request(researcher: object) -> LlmRequest:
-    tools = {tool.name: tool for tool in researcher.tools}
     formatter = SetModelResponseTool(ResearchDraft)
-    tools[formatter.name] = formatter
-    return LlmRequest(
+    request = LlmRequest(
         model="offline",
         contents=[types.Content(role="user", parts=[types.Part(text="question")])],
-        tools_dict=tools,
     )
+    request.append_tools([formatter, *researcher.tools])
+    return request
 
 
 def _forced_function(request: LlmRequest) -> str:
@@ -164,9 +164,22 @@ async def _invoke_with_callback(researcher, tool, args, tool_context):
 def _passing_review(claim_count: int = 1) -> ReviewDecision:
     return ReviewDecision(
         verdict="pass",
+        answer_status="answered",
         checked_claims=claim_count,
         citation_support_ok=True,
         scope_and_version_ok=True,
+        parts=[
+            QuestionPartAssessment(
+                part_id="answer",
+                description="requested answer",
+                supported=True,
+                claim_indices=list(range(claim_count)),
+            )
+        ],
+        all_parts_supported=True,
+        conditions_preserved=True,
+        unsupported_absence_claim_indices=[],
+        abstention_justified=False,
     )
 
 
@@ -187,6 +200,25 @@ async def test_first_eligible_draft_is_intercepted_before_formatter_state(harnes
     assert harness.ledger.citation_repair_attempted
     assert harness.ledger.citation_repair_pending_ids == {evidence_id}
     assert not harness.ledger.citation_repair_read_attempted
+
+
+@pytest.mark.asyncio
+async def test_terminal_ordinary_read_failure_cannot_open_formatter_repair(harness):
+    evidence_id = "local_rules:p0002"
+    harness.ledger.issued_evidence_ids.add(evidence_id)
+    harness.ledger.ordinary_read_failures = 2
+    harness.ledger.model_calls = 4
+    formatter = SetModelResponseTool(ResearchDraft)
+    context = _tool_context()
+
+    result = await _invoke_with_callback(
+        harness.researcher, formatter, _draft_args(evidence_id), context
+    )
+
+    assert "error" not in result
+    assert context.actions.set_model_response == result
+    assert not harness.ledger.citation_repair_attempted
+    assert not harness.ledger.citation_repair_pending_ids
 
 
 @pytest.mark.asyncio
@@ -222,7 +254,8 @@ async def test_wrong_or_subset_repair_read_is_blocked_and_not_retried(harness):
     assert "exactly" in subset_result["error"]
     assert "already used" in second_result["error"]
     assert not harness.ledger.read_evidence_ids
-    assert harness.ledger.tool_calls == 0
+    assert harness.ledger.tool_calls == 2
+    assert harness.ledger.read_evidence_attempts == 2
     request = _request(harness.researcher)
     harness.researcher.before_model_callback(
         FakeContext("document_researcher"), request
@@ -269,13 +302,16 @@ async def test_failed_actual_repair_read_does_not_create_read_evidence(
         tool for tool in harness.researcher.tools if tool.name == "read_evidence"
     )
 
-    with pytest.raises(KeyError):
-        await _invoke_with_callback(
-            harness.researcher,
-            read_tool,
-            {"evidence_ids": [evidence_id]},
-            _tool_context(),
-        )
+    result = await _invoke_with_callback(
+        harness.researcher,
+        read_tool,
+        {"evidence_ids": [evidence_id]},
+        _tool_context(),
+    )
+    assert result["error"] == (
+        "One or more requested evidence pages are unavailable for this invocation."
+    )
+    assert result["retry_allowed"] is False
 
     assert harness.ledger.citation_repair_read_attempted
     assert evidence_id not in harness.ledger.read_evidence_ids

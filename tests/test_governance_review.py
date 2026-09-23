@@ -10,7 +10,7 @@ from app.agents import build_agent
 from app.config import Settings
 from app.gate import apply_gate
 from app.index import IndexRepository
-from app.models import ClaimDraft,CorpusIndex,EmbeddingDescriptor,PageRecord,ResearchDraft,ReviewDecision,SourceRecord
+from app.models import ClaimDraft,CorpusIndex,EmbeddingDescriptor,PageRecord,QuestionPartAssessment,ResearchDraft,ReviewDecision,SourceRecord
 from app.tools import BudgetExceeded,RunLedger,build_tools
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def context(tmp_path):
     return settings,repository,ledger
 
 def draft():return ResearchDraft(status='answered',claims=[ClaimDraft(text='In the Local Tournament, bowlers may bowl four overs.',evidence_ids=['local_rules:p0001'])])
-def review():return ReviewDecision(verdict='pass',checked_claims=1,citation_support_ok=True,scope_and_version_ok=True)
+def review():return ReviewDecision(verdict='pass',answer_status='answered',checked_claims=1,citation_support_ok=True,scope_and_version_ok=True,parts=[QuestionPartAssessment(part_id='answer',description='requested answer',supported=True,claim_indices=[0])],all_parts_supported=True,conditions_preserved=True,unsupported_absence_claim_indices=[],abstention_justified=False)
 def gate(context,d=None,r=None,role='analyst'):
     _,repo,ledger=context
     return apply_gate(request_id=ledger.request_id,session_id='b'*32,role=role,draft=d or draft(),review=r or review(),ledger=ledger,repository=repo,trace=[])
@@ -49,7 +49,7 @@ def test_acl_rechecked_after_issuance(context):
     issue(context);result=gate(context,role='admin');assert not result.passed and not result.response.citations
 
 def test_review_rejection_does_not_leak_draft(context):
-    issue(context);r=ReviewDecision(verdict='fail',checked_claims=1,citation_support_ok=False,scope_and_version_ok=True,issues=['Unsupported'])
+    issue(context);r=ReviewDecision(verdict='fail',answer_status='answered',checked_claims=1,citation_support_ok=False,scope_and_version_ok=True,parts=[QuestionPartAssessment(part_id='answer',description='requested answer',supported=False,claim_indices=[])],all_parts_supported=False,conditions_preserved=False,unsupported_absence_claim_indices=[],abstention_justified=False,issues=['Unsupported'])
     result=gate(context,r=r);assert not result.passed and not result.response.claims
     assert 'four overs' not in result.response.answer
 

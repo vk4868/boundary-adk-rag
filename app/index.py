@@ -14,10 +14,19 @@ from google import genai
 from google.genai import types
 
 from app.config import Settings
-from app.models import CorpusIndex, PageRecord, PublicSource, SearchHit, SourceRecord
+from app.models import (
+    AdjacentEvidencePreview,
+    CorpusIndex,
+    PageRecord,
+    PublicSource,
+    SearchHit,
+    SourceRecord,
+)
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
+PHRASE_TOKEN_RE = re.compile(r"[a-z]+|[0-9]+(?:\.[0-9]+)*", re.IGNORECASE)
+DOTTED_REFERENCE_RE = re.compile(r"\b[0-9]+(?:\.[0-9]+)+\b")
 SNIPPET_EXCLUDED_TOKENS = frozenset(
     {
         "a",
@@ -139,10 +148,29 @@ def _query_focused_snippet(
     if not query_tokens:
         return normalized[:max_chars]
 
+    def is_standalone_numeric_match(match: re.Match[str]) -> bool:
+        token = match.group(0)
+        if not token.isdigit():
+            return True
+        before = normalized[match.start() - 1] if match.start() else ""
+        after = normalized[match.end()] if match.end() < len(normalized) else ""
+        dotted_before = (
+            before == "."
+            and match.start() > 1
+            and normalized[match.start() - 2].isdigit()
+        )
+        dotted_after = (
+            after == "."
+            and match.end() + 1 < len(normalized)
+            and normalized[match.end() + 1].isdigit()
+        )
+        return not dotted_before and not dotted_after
+
     matches = [
         match
         for match in TOKEN_RE.finditer(normalized)
         if match.group(0).lower() in query_tokens
+        and is_standalone_numeric_match(match)
     ]
     if not matches:
         return normalized[:max_chars]
@@ -155,6 +183,27 @@ def _query_focused_snippet(
         )
         for token in query_tokens
     }
+    phrase_query_tokens = [
+        match.group(0).lower() for match in PHRASE_TOKEN_RE.finditer(query)
+    ]
+    numeric_phrases: list[tuple[str, ...]] = []
+    for index, token in enumerate(phrase_query_tokens):
+        if not any(character.isdigit() for character in token):
+            continue
+        phrase = tuple(
+            phrase_query_tokens[
+                max(0, index - 1) : min(len(phrase_query_tokens), index + 2)
+            ]
+        )
+        if len(phrase) >= 2 and phrase not in numeric_phrases:
+            numeric_phrases.append(phrase)
+
+    def contains_phrase(tokens: list[str], phrase: tuple[str, ...]) -> bool:
+        return any(
+            tuple(tokens[index : index + len(phrase)]) == phrase
+            for index in range(len(tokens) - len(phrase) + 1)
+        )
+
     best: tuple[float, int, int] | None = None
     for anchor in matches:
         start = max(0, min(anchor.start() - max_chars // 3, len(normalized) - max_chars))
@@ -167,7 +216,16 @@ def _query_focused_snippet(
         covered = {match.group(0).lower() for match in window_matches}
         coverage_score = sum(weights[token] for token in covered)
         density_score = sum(weights[match.group(0).lower()] for match in window_matches)
-        score = coverage_score + 0.05 * density_score
+        phrase_window_tokens = [
+            match.group(0).lower()
+            for match in PHRASE_TOKEN_RE.finditer(normalized[start:end])
+        ]
+        numeric_phrase_score = sum(
+            3.0
+            for phrase in numeric_phrases
+            if contains_phrase(phrase_window_tokens, phrase)
+        )
+        score = coverage_score + 0.05 * density_score + numeric_phrase_score
         candidate = (score, -start, start)
         if best is None or candidate > best:
             best = candidate
@@ -184,6 +242,35 @@ def _query_focused_snippet(
         if previous_space > start:
             end = previous_space
     return normalized[start:end]
+
+
+def _adjacent_preview(
+    text: str,
+    query: str,
+    *,
+    relation: str,
+    max_chars: int = 350,
+) -> str:
+    """Return reference-focused context, otherwise a boundary-facing fragment."""
+    normalized = " ".join(text.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    references = list(dict.fromkeys(DOTTED_REFERENCE_RE.findall(query)))
+    for reference in references:
+        match = re.search(
+            rf"(?<![0-9.]){re.escape(reference)}(?![0-9.])", normalized
+        )
+        if match is None:
+            continue
+        start = max(
+            0,
+            min(match.start() - max_chars // 3, len(normalized) - max_chars),
+        )
+        end = min(len(normalized), start + max_chars)
+        return normalized[start:end].strip()
+    if relation == "previous":
+        return normalized[-max_chars:].strip()
+    return normalized[:max_chars].strip()
 
 
 class IndexRepository:
@@ -343,6 +430,7 @@ class IndexRepository:
         top_k = max(1, min(top_k, self.settings.app_max_search_results))
         index = self.load()
         allowed = self._allowed_sources(role)
+        context_query = lexical_query
         if source_ids is not None:
             requested = set(source_ids)
             unauthorized = requested.difference(allowed)
@@ -360,11 +448,15 @@ class IndexRepository:
                     f"{source.source_id} {source.title} {source.competition}"
                 )
             }
-            focused_tokens = [
-                token
-                for token in _tokens(lexical_query)
-                if token not in identity_tokens
-            ]
+            context_query = TOKEN_RE.sub(
+                lambda match: (
+                    ""
+                    if match.group(0).lower() in identity_tokens
+                    else match.group(0)
+                ),
+                lexical_query,
+            )
+            focused_tokens = _tokens(context_query)
             lexical_query = " ".join(focused_tokens)
         candidates = [page for page in index.pages if page.source_id in allowed]
         if not candidates:
@@ -410,12 +502,39 @@ class IndexRepository:
             method = "lexical"
 
         hits: list[SearchHit] = []
+        pages_by_id = {page.evidence_id: page for page in candidates}
         for score, page in sorted(
             scored, key=lambda item: (-item[0], item[1].evidence_id)
         )[:top_k]:
             if score <= 0:
                 continue
             source = allowed[page.source_id]
+            adjacent_pages = [
+                (adjacent_page, relation)
+                for adjacent_page, relation in (
+                    (page.page - 1, "previous"),
+                    (page.page + 1, "next"),
+                )
+                if 1 <= adjacent_page <= source.page_count
+            ]
+            adjacent_evidence_ids = [
+                f"{page.source_id}:p{adjacent_page:04d}"
+                for adjacent_page, _relation in adjacent_pages
+            ]
+            adjacent_previews = [
+                AdjacentEvidencePreview(
+                    evidence_id=f"{page.source_id}:p{adjacent_page:04d}",
+                    relation=relation,
+                    snippet=_adjacent_preview(
+                        pages_by_id[
+                            f"{page.source_id}:p{adjacent_page:04d}"
+                        ].text,
+                        context_query,
+                        relation=relation,
+                    ),
+                )
+                for adjacent_page, relation in adjacent_pages
+            ]
             hits.append(
                 SearchHit(
                     evidence_id=page.evidence_id,
@@ -426,10 +545,12 @@ class IndexRepository:
                     page=page.page,
                     snippet=_query_focused_snippet(
                         page.text,
-                        lexical_query,
+                        context_query,
                         document_frequency=document_frequency,
                         document_count=len(candidates),
                     ),
+                    adjacent_evidence_ids=adjacent_evidence_ids,
+                    adjacent_previews=adjacent_previews,
                     score=round(score, 6),
                     retrieval_method=method,
                 )
