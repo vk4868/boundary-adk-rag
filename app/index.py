@@ -22,6 +22,15 @@ from app.models import (
     SearchHit,
     SourceRecord,
 )
+from app.ollama_embeddings import (
+    DEFAULT_CHUNK_BYTES,
+    EMBEDDING_METHOD,
+    OllamaEmbeddingClient,
+    OllamaEmbeddingError,
+    POOLING_METHOD,
+    chunk_text,
+    pool_embeddings,
+)
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
@@ -282,6 +291,7 @@ class IndexRepository:
         self._index: CorpusIndex | None = None
         self._load_error: str | None = None
         self._vertex_client: genai.Client | None = None
+        self._ollama_client: OllamaEmbeddingClient | None = None
 
     def load(self) -> CorpusIndex:
         if self._index is not None:
@@ -303,11 +313,7 @@ class IndexRepository:
                     raise IndexUnavailable(
                         "configured retrieval provider does not match the fixed index"
                     )
-                if index.embedding.provider == "vertex":
-                    if not self.settings.google_cloud_project:
-                        raise IndexUnavailable(
-                            "Vertex retrieval requires GOOGLE_CLOUD_PROJECT"
-                        )
+                if index.embedding.provider in {"ollama", "vertex"}:
                     if index.embedding.model != self.settings.app_embedding_model:
                         raise IndexUnavailable(
                             "configured embedding model does not match the fixed index"
@@ -315,6 +321,21 @@ class IndexRepository:
                     if index.embedding.dimensions != self.settings.app_embedding_dimensions:
                         raise IndexUnavailable(
                             "configured embedding dimensions do not match the fixed index"
+                        )
+                if index.embedding.provider == "ollama" and (
+                    index.embedding.embedding_method != EMBEDDING_METHOD
+                    or not index.embedding.model_digest
+                    or index.embedding.context_window_tokens != 2048
+                    or index.embedding.chunk_max_bytes != DEFAULT_CHUNK_BYTES
+                    or index.embedding.pooling != POOLING_METHOD
+                ):
+                    raise IndexUnavailable(
+                        "fixed Ollama index embedding method is incompatible"
+                    )
+                if index.embedding.provider == "vertex":
+                    if not self.settings.google_cloud_project:
+                        raise IndexUnavailable(
+                            "Vertex retrieval requires GOOGLE_CLOUD_PROJECT"
                         )
                 self._index = index
                 self._load_error = None
@@ -375,6 +396,35 @@ class IndexRepository:
         raise KeyError(evidence_id)
 
     def _query_embedding(self, query: str, descriptor_model: str) -> list[float]:
+        if self.settings.app_embedding_provider == "ollama":
+            if self._ollama_client is None:
+                self._ollama_client = OllamaEmbeddingClient(
+                    base_url=self.settings.app_ollama_base_url,
+                    timeout_ms=self.settings.app_embedding_timeout_ms,
+                )
+            try:
+                descriptor = self.load().embedding
+                if not descriptor.model_digest:
+                    raise OllamaEmbeddingError("fixed Ollama index has no model digest")
+                self._ollama_client.require_model_digest(
+                    descriptor_model, descriptor.model_digest
+                )
+                chunks = chunk_text(query, max_bytes=DEFAULT_CHUNK_BYTES)
+                vectors = [
+                    self._ollama_client.embed(
+                        chunk,
+                        model=descriptor_model,
+                        dimensions=self.settings.app_embedding_dimensions,
+                    )
+                    for chunk in chunks
+                ]
+                return pool_embeddings(
+                    vectors,
+                    [len(chunk.encode("utf-8")) for chunk in chunks],
+                    dimensions=self.settings.app_embedding_dimensions,
+                )
+            except OllamaEmbeddingError as exc:
+                raise IndexUnavailable("Ollama query embedding failed") from exc
         if self._vertex_client is None:
             self._vertex_client = genai.Client(
                 vertexai=True,
@@ -431,7 +481,10 @@ class IndexRepository:
         index = self.load()
         allowed = self._allowed_sources(role)
         context_query = lexical_query
-        if source_ids is not None:
+        # Some local models serialize an omitted optional array as ``[]``.
+        # Treat that representation as no filter; non-empty lists still pass
+        # through the same exact-ID ACL validation before any embedding call.
+        if source_ids:
             requested = set(source_ids)
             unauthorized = requested.difference(allowed)
             if unauthorized:
@@ -463,9 +516,9 @@ class IndexRepository:
             return []
 
         lexical_scores, document_frequency = _bm25_scores(lexical_query, candidates)
-        if index.embedding.provider == "vertex":
+        if index.embedding.provider in {"ollama", "vertex"}:
             if not index.embedding.model:
-                raise IndexUnavailable("fixed Vertex index has no model descriptor")
+                raise IndexUnavailable("fixed vector index has no model descriptor")
             query_vector = self._query_embedding(query, index.embedding.model)
             dense_scores = [
                 _cosine(query_vector, page.embedding or []) for page in candidates
@@ -494,7 +547,7 @@ class IndexRepository:
                     strict=True,
                 )
             ]
-            method = "vertex_hybrid"
+            method = f"{index.embedding.provider}_hybrid"
         else:
             if not any(lexical_scores):
                 return []

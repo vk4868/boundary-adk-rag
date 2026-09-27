@@ -8,8 +8,8 @@ from google.adk.agents.invocation_context import InvocationContext
 from google.adk.agents.run_config import RunConfig
 from google.adk.flows.llm_flows import _output_schema_processor, basic
 from google.adk.models import LlmRequest
+from google.adk.models.lite_llm import _get_completion_inputs
 from google.adk.sessions import InMemorySessionService, Session
-from google.genai import models as genai_models
 from google.genai import types
 
 from app.agents import (
@@ -34,10 +34,8 @@ def schema_harness(tmp_path):
     settings = Settings(
         _env_file=None,
         app_enable_model_calls=True,
-        app_model_provider="vertex",
-        google_cloud_project="offline-dynamic-schema",
-        google_cloud_location="global",
-        app_embedding_provider="lexical",
+        app_model_provider="ollama",
+        app_embedding_provider="ollama",
         app_index_path=tmp_path / "unused-index.json",
         app_audit_path=tmp_path / "audit.jsonl",
     )
@@ -160,29 +158,19 @@ async def test_actual_research_request_advertises_only_reauthorized_issued_ids(
     function_config = request.config.tool_config.function_calling_config
     assert function_config.allowed_function_names == ["read_evidence"]
 
-    parameters = types._GenerateContentParameters(
-        model=settings.app_model,
-        contents=[types.Content(role="user", parts=[types.Part(text="question")])],
-        config=request.config,
-    )
-    wire = genai_models._GenerateContentParameters_to_vertex(
-        researcher.model.client._api_client, parameters
+    _messages, wire_tools, _response_format, _params, tool_choice = (
+        await _get_completion_inputs(request, researcher.model.model)
     )
     wire_declaration = next(
-        declaration
-        for tool in wire["tools"]
-        for declaration in tool["functionDeclarations"]
-        if declaration.name == "read_evidence"
+        tool["function"]
+        for tool in wire_tools or []
+        if tool["function"]["name"] == "read_evidence"
     )
-    assert wire_declaration.parameters_json_schema["properties"]["evidence_ids"][
-        "items"
-    ] == {"type": "string", "enum": ["rules:p0001"]}
-    serialized_declaration = json.loads(
-        wire_declaration.model_dump_json(exclude_none=True, by_alias=True)
-    )
-    assert serialized_declaration["parametersJsonSchema"]["properties"][
-        "evidence_ids"
-    ]["items"] == {"type": "string", "enum": ["rules:p0001"]}
+    assert tool_choice == "required"
+    assert wire_declaration["parameters"]["properties"]["evidence_ids"]["items"] == {
+        "type": "string",
+        "enum": ["rules:p0001"],
+    }
 
 
 @pytest.mark.asyncio

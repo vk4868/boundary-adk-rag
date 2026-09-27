@@ -13,13 +13,24 @@ from app.index import IndexRepository
 from app.models import ClaimDraft,CorpusIndex,EmbeddingDescriptor,PageRecord,QuestionPartAssessment,ResearchDraft,ReviewDecision,SourceRecord
 from app.tools import BudgetExceeded,RunLedger,build_tools
 
+def test_review_schema_exposes_cross_field_semantics_to_local_models():
+    schema=ReviewDecision.model_json_schema();properties=schema['properties']
+    assert 'exactly echo' in properties['answer_status']['description']
+    assert 'Exact conjunction' in properties['all_parts_supported']['description']
+    assert 'no extra condition' in properties['conditions_preserved']['description']
+    assert 'including for insufficient_evidence' in properties['parts']['description']
+    assert 'never return an empty parts list' in properties['parts']['description']
+    assert 'false for an answered draft' in properties['abstention_justified']['description']
+    part_properties=schema['$defs']['QuestionPartAssessment']['properties']
+    assert 'non-empty when supported is true' in part_properties['claim_indices']['description']
+
 @pytest.fixture
 def context(tmp_path):
     source=SourceRecord(source_id='local_rules',title='Local tournament supplied rules',version='Supplied copy',scope='Local tournament',competition='Local Tournament',allowed_roles=['analyst'],page_count=1,sha256='a'*64)
     page=PageRecord(evidence_id='local_rules:p0001',source_id='local_rules',page=1,text='Local Tournament bowlers may bowl four overs. '+'padding '*220+'The supporting ending must remain visible.')
     index=CorpusIndex(schema_version=1,embedding=EmbeddingDescriptor(provider='lexical'),sources=[source],pages=[page])
     path=tmp_path/'index.json';path.write_text(index.model_dump_json())
-    settings=Settings(_env_file=None,app_enable_model_calls=False,app_model_provider='disabled',app_embedding_provider='lexical',app_index_path=path,app_audit_path=tmp_path/'audit.jsonl')
+    settings=Settings(_env_file=None,app_enable_model_calls=False,app_model_provider='disabled',app_embedding_provider='lexical',app_index_path=path,app_index_sha256=None,app_audit_path=tmp_path/'audit.jsonl')
     repository=IndexRepository(settings);ledger=RunLedger('a'*32)
     return settings,repository,ledger
 
@@ -37,10 +48,11 @@ def test_agent_is_real_adk_sequence(context):
     assert isinstance(agent,SequentialAgent)
     assert len(agent.sub_agents)>=3
     assert isinstance(agent.sub_agents[0],LlmAgent) and isinstance(agent.sub_agents[1],LlmAgent)
-    assert agent.sub_agents[0].model.model==agent.sub_agents[1].model.model==settings.app_model
-    assert agent.sub_agents[0].model.retry_options.attempts==1
+    assert agent.sub_agents[0].model is agent.sub_agents[1].model
+    assert agent.sub_agents[0].model.model==f'ollama_chat/{settings.app_model}'
+    assert agent.sub_agents[0].generate_content_config.http_options.retry_options.attempts==0
     assert {t.name for t in agent.sub_agents[0].tools}=={'list_sources','search_documents','read_evidence'}
-    assert not agent.sub_agents[1].tools
+    assert {tool.name for tool in agent.sub_agents[1].tools}=={'set_model_response'}
 
 def test_stale_evidence_fails(context):
     result=gate(context);assert not result.passed and not result.response.claims

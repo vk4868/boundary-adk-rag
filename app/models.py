@@ -76,13 +76,18 @@ class PageRecord(StrictModel):
 
 
 class EmbeddingDescriptor(StrictModel):
-    provider: Literal["lexical", "vertex"]
+    provider: Literal["lexical", "ollama", "vertex"]
     model: str | None = None
+    model_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     location: str | None = None
     dimensions: int | None = Field(default=None, ge=1)
     task_type: str | None = None
     billable_character_count: int | None = Field(default=None, ge=0)
     truncated_page_count: int | None = Field(default=None, ge=0)
+    embedding_method: str | None = None
+    context_window_tokens: int | None = Field(default=None, ge=1)
+    chunk_max_bytes: int | None = Field(default=None, ge=1)
+    pooling: str | None = None
 
 
 class CorpusIndex(StrictModel):
@@ -93,6 +98,20 @@ class CorpusIndex(StrictModel):
 
     @model_validator(mode="after")
     def validate_references(self) -> "CorpusIndex":
+        if self.embedding.provider == "ollama":
+            if (
+                not self.embedding.model
+                or not self.embedding.model_digest
+                or self.embedding.dimensions is None
+            ):
+                raise ValueError("Ollama embedding identity is incomplete")
+            if (
+                not self.embedding.embedding_method
+                or self.embedding.context_window_tokens != 2048
+                or self.embedding.chunk_max_bytes is None
+                or not self.embedding.pooling
+            ):
+                raise ValueError("Ollama embedding method metadata is incomplete")
         ordered_source_ids = [source.source_id for source in self.sources]
         source_ids = set(ordered_source_ids)
         if len(source_ids) != len(ordered_source_ids):
@@ -108,7 +127,7 @@ class CorpusIndex(StrictModel):
                 raise ValueError(f"non-canonical evidence_id: {page.evidence_id}")
             evidence_ids.add(page.evidence_id)
             page_numbers[page.source_id].add(page.page)
-            if self.embedding.provider == "vertex" and page.embedding is None:
+            if self.embedding.provider in {"ollama", "vertex"} and page.embedding is None:
                 raise ValueError(f"missing embedding: {page.evidence_id}")
             if page.embedding is not None:
                 if self.embedding.dimensions is None:
@@ -151,7 +170,7 @@ class SearchHit(StrictModel):
         default_factory=list, max_length=2
     )
     score: float
-    retrieval_method: Literal["lexical", "vertex_hybrid"]
+    retrieval_method: Literal["lexical", "ollama_hybrid", "vertex_hybrid"]
 
     @field_validator("adjacent_evidence_ids")
     @classmethod
@@ -199,8 +218,22 @@ class ResearchDraft(StrictModel):
 class QuestionPartAssessment(StrictModel):
     part_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,23}$")
     description: str = Field(min_length=3, max_length=160)
-    supported: bool
-    claim_indices: list[StrictInt] = Field(default_factory=list, max_length=12)
+    supported: bool = Field(
+        description=(
+            "True exactly when mapped researcher claims and their attached "
+            "evidence correctly answer this question part. A supported negative "
+            "or prohibition is true support; supported does not mean that a "
+            "permission was granted or that the question's premise is true."
+        )
+    )
+    claim_indices: list[StrictInt] = Field(
+        default_factory=list,
+        max_length=12,
+        description=(
+            "Zero-based researcher claim indices supporting this part. Must be "
+            "non-empty when supported is true and empty when supported is false."
+        ),
+    )
 
     @field_validator("description")
     @classmethod
@@ -231,16 +264,47 @@ class QuestionPartAssessment(StrictModel):
 
 
 class ReviewDecision(StrictModel):
-    verdict: Literal["pass", "fail"]
-    answer_status: Literal["answered", "insufficient_evidence"]
+    verdict: Literal["pass", "fail"] = Field(
+        description=(
+            "Pass only when every required review check is satisfied and issues "
+            "is empty; otherwise fail."
+        )
+    )
+    answer_status: Literal["answered", "insufficient_evidence"] = Field(
+        description="Must exactly echo the research draft status being reviewed."
+    )
     checked_claims: int = Field(ge=0, le=12)
     citation_support_ok: bool
     scope_and_version_ok: bool
-    parts: list[QuestionPartAssessment] = Field(min_length=1, max_length=8)
-    all_parts_supported: bool
-    conditions_preserved: bool
+    parts: list[QuestionPartAssessment] = Field(
+        min_length=1,
+        max_length=8,
+        description=(
+            "Every independently requested user-question part, including for "
+            "insufficient_evidence. An unmapped part must still be listed with "
+            "supported false and an empty claim_indices array; never return an "
+            "empty parts list."
+        ),
+    )
+    all_parts_supported: bool = Field(
+        description=(
+            "Exact conjunction of every parts[].supported value; true only when "
+            "all listed question parts are supported."
+        )
+    )
+    conditions_preserved: bool = Field(
+        description=(
+            "True exactly when no material condition was lost, strengthened, or "
+            "added by the draft; no extra condition means this remains true."
+        )
+    )
     unsupported_absence_claim_indices: list[StrictInt] = Field(max_length=12)
-    abstention_justified: bool
+    abstention_justified: bool = Field(
+        description=(
+            "True only for a justified insufficient_evidence draft with zero "
+            "claims; false for an answered draft."
+        )
+    )
     issues: list[str] = Field(default_factory=list, max_length=12)
 
     @field_validator("unsupported_absence_claim_indices")

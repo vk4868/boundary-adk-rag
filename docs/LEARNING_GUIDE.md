@@ -1,3 +1,5 @@
+> Local Ollama migration: this document records the earlier Vertex/Cloud Run implementation or its evaluation procedure. For the active local setup use `README.md` and `docs/DEMO_GUIDE.md`; current local evidence is in `docs/RESULTS_LOCAL.md`. Historical commands/results are not proof of local-model behavior.
+
 # Understand and explain Boundary
 
 This guide teaches the ideas through this project's code. Start with one question: **How does the app know that a returned claim came from a document the user was allowed to read?** Follow that question through the files before memorizing framework names.

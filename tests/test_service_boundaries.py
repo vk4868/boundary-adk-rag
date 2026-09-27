@@ -3,13 +3,15 @@ import json
 from pathlib import Path
 import pytest
 from google.adk.events import Event,EventActions
+from pydantic import ValidationError
 from app.audit import AuditLogger,AuditWriteError
 from app.config import Settings
-from app.service import ChatService,ServiceUnavailable,SessionOwnershipError,UnknownSession
+from app.models import ResearchDraft
+from app.service import APP_NAME,ChatService,ServiceUnavailable,SessionOwnershipError,UnknownSession
 
 @pytest.fixture
 def service(tmp_path,monkeypatch):
-    settings=Settings(_env_file=None,app_enable_model_calls=True,app_model_provider='vertex',google_cloud_project='offline-test-never-call',app_audit_path=tmp_path/'audit.jsonl',app_max_session_turns=1)
+    settings=Settings(_env_file=None,app_enable_model_calls=True,app_model_provider='ollama',app_audit_path=tmp_path/'audit.jsonl',app_max_session_turns=1)
     service=ChatService(settings)
     monkeypatch.setattr(service.repository,'load',lambda:None)
     # Any unexpected real agent construction fails before SDK/network use.
@@ -81,6 +83,28 @@ async def test_success_terminal_audit_identifies_configured_model(service,monkey
     assert terminal['status']=='insufficient_evidence'
     assert {key:terminal[key] for key in ('model','model_provider','model_location')}==service.settings.audit_model_metadata
 
+@pytest.mark.asyncio
+async def test_forced_tool_prose_fails_closed_without_publishing_content(service,monkeypatch):
+    raw_prose='RAW MODEL PROSE MUST NOT BE PUBLISHED OR LOGGED'
+    monkeypatch.setattr('app.service.build_agent',lambda *a,**kw:object())
+    class ProseRunner:
+        def __init__(self,*,agent,app_name,session_service):self.sessions=session_service;self.app_name=app_name
+        async def run_async(self,**kwargs):
+            ResearchDraft.model_validate_json(raw_prose)
+            yield
+        async def close(self):pass
+    monkeypatch.setattr('app.service.Runner',ProseRunner)
+
+    with pytest.raises(ValidationError,match='Invalid JSON'):
+        await service.chat(message='offline forced tool test',requested_session_id=None,principal='owner-a')
+
+    record=next(iter(service._registry.values()))
+    session=await service.sessions.get_session(app_name=APP_NAME,user_id=record.owner,session_id=record.internal_id)
+    assert session is not None
+    assert not session.state.get('research_draft')
+    assert not session.state.get('governed_response')
+    assert raw_prose not in service.settings.app_audit_path.read_text()
+
 def test_audit_rejects_raw_content_and_arbitrary_toolname(tmp_path):
     logger=AuditLogger(tmp_path/'audit.jsonl')
     with pytest.raises(AuditWriteError):logger.append_sync({'event':'chat_request','answer':'private passage'})
@@ -116,3 +140,11 @@ def test_api_auth_role_and_security_headers(tmp_path,monkeypatch):
         assert r.headers['cache-control']=='no-store'
         assert "frame-ancestors 'none'" in r.headers['content-security-policy']
         assert client.post('/api/chat',headers={'X-App-Token':safe.app_token.get_secret_value()},json={'message':'No call','role':'admin'}).status_code==400
+
+        async def prose_failure(**kwargs):
+            ResearchDraft.model_validate_json('RAW FORCED TOOL PROSE')
+        monkeypatch.setattr(main.service,'chat',prose_failure)
+        failed=client.post('/api/chat',headers={'X-App-Token':safe.app_token.get_secret_value()},json={'message':'Trigger safe failure'})
+        assert failed.status_code==502
+        assert failed.json()=={'detail':'model workflow failed closed'}
+        assert 'RAW FORCED TOOL PROSE' not in failed.text

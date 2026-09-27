@@ -100,6 +100,30 @@ def test_prompts_require_scope_on_every_individual_claim():
     assert "Every individual" in REVIEWER_INSTRUCTION
 
 
+def test_prompts_assess_qualifiers_from_complete_read_page_context():
+    assert "complete text of each read evidence page" in RESEARCHER_INSTRUCTION
+    assert "combined statements on that page" in RESEARCHER_INSTRUCTION
+    assert "complete text of each read evidence page" in REVIEWER_INSTRUCTION
+    assert "limitations as claims to verify" in REVIEWER_INSTRUCTION
+    assert "evidence IDs attached to that" in REVIEWER_INSTRUCTION
+    assert "cannot supply a missing premise" in REVIEWER_INSTRUCTION
+
+
+def test_reviewer_prompt_states_cross_field_part_mapping_contract():
+    assert "`supported: false`" in REVIEWER_INSTRUCTION
+    assert "`claim_indices` must be an empty array" in REVIEWER_INSTRUCTION
+    assert "`supported: true`" in REVIEWER_INSTRUCTION
+    assert "at least one zero-based" in REVIEWER_INSTRUCTION
+
+
+def test_prompts_do_not_invent_exclusivity_requirements():
+    for instruction in (RESEARCHER_INSTRUCTION, REVIEWER_INSTRUCTION):
+        assert "general rule supports a specific case" in instruction
+        assert "applicable exception changes it" in instruction
+        assert "apply exclusively" in instruction
+        assert "actual source scope" in instruction
+
+
 def test_second_local_claim_cannot_rely_on_first_claim_scope(tmp_path):
     result = _gate(tmp_path, "The total may be reduced under the supplied conditions.")
 

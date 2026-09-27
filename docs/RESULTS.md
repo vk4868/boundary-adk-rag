@@ -1,3 +1,5 @@
+> Local Ollama migration: this document records the earlier Vertex/Cloud Run implementation or its evaluation procedure. For the active local setup use `README.md` and `docs/DEMO_GUIDE.md`; current local evidence is in `docs/RESULTS_LOCAL.md`. Historical commands/results are not proof of local-model behavior.
+
 # Verification results
 
 This evidence report distinguishes deterministic checks, custom HTTP evaluation, native ADK tool-trajectory scoring and source-based agent assessment. None alone establishes production readiness. Raw responses, source excerpts, credentials and detailed operational artifacts remain private under `work/` or the local ADK artifact directory.

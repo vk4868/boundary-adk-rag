@@ -1,3 +1,5 @@
+> Local Ollama migration: this document records the earlier Vertex/Cloud Run implementation or its evaluation procedure. For the active local setup use `README.md` and `docs/DEMO_GUIDE.md`; current local evidence is in `docs/RESULTS_LOCAL.md`. Historical commands/results are not proof of local-model behavior.
+
 # Development evaluation
 
 `cases.jsonl` is a transparent 20-case development set. It is available to implementers and is **not a holdout**. The three follow-up cases add a setup turn, for 23 endpoint requests. Root maintains a separate final acceptance set.
@@ -8,7 +10,7 @@ Plan only, no calls:
 .venv/bin/python evals/run.py
 ```
 
-Execute only against an already configured, authorized endpoint and after reconciling the remaining Google budget. Use the token-safe Python example in [the demo guide](../docs/DEMO_GUIDE.md#reproduce-evaluations-carefully), which reads the private settings in-process and sets a $2.50 evaluator allowance for all 23 turns. Do not put a token in command arguments or shell history. The CLI sends `X-App-Token` to coexist with Cloud Run IAM; `--ids dev-01,dev-09` selects a subset and records that selected denominator.
+Execute only against an already configured, authorized endpoint and after reconciling the remaining Google budget. Use the token-safe Python example in [the demo guide](../docs/HISTORICAL_CLOUD_DEMO.md#reproduce-evaluations-carefully), which reads the private settings in-process and sets a $2.50 evaluator allowance for all 23 turns. Do not put a token in command arguments or shell history. The CLI sends `X-App-Token` to coexist with Cloud Run IAM; `--ids dev-01,dev-09` selects a subset and records that selected denominator.
 
 The evaluator reserves a conservative allowance before each dispatched endpoint turn, reads reported usage costs when available, and stops before its configured estimate. It is an additional guard, not a Google billing cap. The application enforces per-run call, token, tool, evidence and time budgets; the evaluator owns the monetary reservation. `--per-turn-reservation-usd` defaults to $0.10. The separate Gemini 3.8 benchmark uses $0.20 per attempted turn. Both this amount and `--max-estimated-usd` must be finite and strictly positive. Every checkpoint records the selected reserve and budget; the harness rechecks the available reserve before each dispatch, including follow-ups after a setup cost is reconciled. Uncertain requests retain their reserve. Actual costs must be reconciled with application usage and billing metadata.
 

@@ -1,3 +1,5 @@
+> Local Ollama migration: this document records the earlier Vertex/Cloud Run implementation or its evaluation procedure. For the active local setup use `README.md` and `docs/DEMO_GUIDE.md`; current local evidence is in `docs/RESULTS_LOCAL.md`. Historical commands/results are not proof of local-model behavior.
+
 # Cost controls and estimates
 
 Checked 22 September 2026. All amounts are USD, before tax and credits. The user authorized $10 in Google usage and reported approximately $300 trial credit with 18 days remaining. Billing access works; the remaining credit balance has not been independently verified.

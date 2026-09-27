@@ -31,10 +31,8 @@ def pipeline(tmp_path):
     settings = Settings(
         _env_file=None,
         app_enable_model_calls=True,
-        app_model_provider="vertex",
-        google_cloud_project="offline-phase-test",
-        google_cloud_location="global",
-        app_embedding_provider="lexical",
+        app_model_provider="ollama",
+        app_embedding_provider="ollama",
         app_index_path=tmp_path / "unused-index.json",
         app_audit_path=tmp_path / "unused-audit.jsonl",
         app_max_model_calls=8,
@@ -91,6 +89,15 @@ def _allowed(request: LlmRequest) -> tuple[str, list[str]]:
     return config.mode.value, config.allowed_function_names or []
 
 
+def _declaration(request: LlmRequest, name: str):
+    return next(
+        declaration
+        for tool in request.config.tools or []
+        for declaration in tool.function_declarations or []
+        if declaration.name == name
+    )
+
+
 def test_required_tool_phases_use_native_function_calling(pipeline):
     _settings, ledger, agent = pipeline
     researcher = agent.sub_agents[0]
@@ -106,6 +113,19 @@ def test_required_tool_phases_use_native_function_calling(pipeline):
     request = _request(researcher)
     callback(context, request)
     assert _allowed(request) == ("ANY", ["search_documents"])
+    instruction = request.config.system_instruction
+    assert "respond only with a tool call" in str(instruction)
+    assert "`search_documents`" in str(instruction)
+    assert request.contents[-1].role == "user"
+    assert "`search_documents`" in request.contents[-1].parts[0].text
+    search_declaration = _declaration(request, "search_documents")
+    source_schema = search_declaration.parameters_json_schema["properties"][
+        "source_ids"
+    ]
+    array_schema = next(
+        choice for choice in source_schema["anyOf"] if choice.get("type") == "array"
+    )
+    assert array_schema["items"]["enum"] == ["source"]
 
     ledger.reset("read-phase")
     ledger.listed_sources_successfully = True
@@ -129,6 +149,36 @@ def test_zero_hit_search_forces_structured_abstention(pipeline):
 
     assert _allowed(request) == ("ANY", ["set_model_response"])
     assert "insufficient_evidence" in str(request.config.system_instruction)
+    assert "`evidence_ids`" in request.contents[-1].parts[0].text
+    formatter_schema = _declaration(
+        request, "set_model_response"
+    ).parameters_json_schema
+    assert "$defs" not in formatter_schema
+    claim_schema = formatter_schema["properties"]["claims"]["items"]
+    assert "$ref" not in claim_schema
+    assert claim_schema["required"] == ["text", "evidence_ids"]
+    assert claim_schema["properties"]["evidence_ids"]["type"] == "array"
+
+
+def test_invalid_search_source_is_rejected_before_tool_dispatch(pipeline):
+    _settings, ledger, agent = pipeline
+    researcher = agent.sub_agents[0]
+    search_tool = next(tool for tool in researcher.tools if tool.name == "search_documents")
+
+    result = researcher.before_tool_callback(
+        search_tool,
+        {"query": "overs", "source_ids": ["invented_source"]},
+        SimpleNamespace(),
+    )
+
+    assert result == {
+        "error": (
+            "The source filter is invalid. Use exact source_id values returned by "
+            "list_sources, or use an empty list to search all authorized sources."
+        )
+    }
+    assert ledger.tool_calls == 1
+    assert ledger.successful_searches == 0
 
 
 def test_read_evidence_allows_auto_until_reserved_formatter_call(pipeline):
@@ -143,6 +193,16 @@ def test_read_evidence_allows_auto_until_reserved_formatter_call(pipeline):
     request = _request(researcher)
     researcher.before_model_callback(FakeContext("document_researcher"), request)
     assert _allowed(request) == ("AUTO", [])
+    assert "respond only with one tool call" in request.contents[-1].parts[0].text
+    assert "`set_model_response`" in request.contents[-1].parts[0].text
+    formatter_schema = _declaration(
+        request, "set_model_response"
+    ).parameters_json_schema
+    assert "$defs" not in formatter_schema
+    claim_schema = formatter_schema["properties"]["claims"]["items"]
+    assert "$ref" not in claim_schema
+    assert claim_schema["required"] == ["text", "evidence_ids"]
+    assert "exact field `evidence_ids`" in str(request.config.system_instruction)
 
     ledger.model_calls = settings.app_max_model_calls - 3
     request = _request(researcher)
@@ -240,6 +300,53 @@ def test_reviewer_slot_cannot_be_consumed_by_researcher(pipeline):
     )
     reviewer.before_model_callback(FakeContext("evidence_reviewer"), reviewer_request)
     assert ledger.model_calls == settings.app_max_model_calls
+
+
+def test_invalid_reviewer_call_at_global_limit_cannot_start_ninth_call(pipeline):
+    settings, ledger, agent = pipeline
+    reviewer = agent.sub_agents[1]
+    ledger.model_calls = settings.app_max_model_calls - 1
+
+    reviewer.before_model_callback(
+        FakeContext("evidence_reviewer"),
+        LlmRequest(
+            model="offline",
+            contents=[types.Content(role="user", parts=[types.Part(text="review")])],
+        ),
+    )
+    assert ledger.model_calls == settings.app_max_model_calls
+
+    with pytest.raises(BudgetExceeded, match="model-call budget"):
+        reviewer.before_model_callback(
+            FakeContext("evidence_reviewer"), LlmRequest(model="offline")
+        )
+
+
+def test_reviewer_call_seven_permits_exactly_one_correction_on_call_eight(pipeline):
+    settings, ledger, agent = pipeline
+    reviewer = agent.sub_agents[1]
+    ledger.model_calls = settings.app_max_model_calls - 2
+
+    reviewer.before_model_callback(
+        FakeContext("evidence_reviewer"), LlmRequest(model="offline")
+    )
+    assert ledger.model_calls == settings.app_max_model_calls - 1
+
+    reviewer.after_tool_callback(
+        reviewer.tools[0],
+        {},
+        SimpleNamespace(),
+        {"error": "typed ReviewDecision validation failed"},
+    )
+    correction = LlmRequest(model="offline")
+    reviewer.before_model_callback(FakeContext("evidence_reviewer"), correction)
+    assert ledger.model_calls == settings.app_max_model_calls
+    assert "typed ReviewDecision validation failed" in correction.contents[0].parts[0].text
+
+    with pytest.raises(BudgetExceeded, match="model-call budget"):
+        reviewer.before_model_callback(
+            FakeContext("evidence_reviewer"), LlmRequest(model="offline")
+        )
 
 
 def test_boundary_reads_then_formats_and_cannot_start_another_search(pipeline):

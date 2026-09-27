@@ -1,100 +1,88 @@
-# Boundary — Document Intelligence
+# Boundary — Local Document Research with Google ADK
 
-A governed document research assistant built with Google ADK, Vertex AI and FastAPI. Ask about a rule, compare competing rulebooks, or follow up on an earlier answer. Boundary retrieves authorized source pages, runs a second agent to review the evidence, and releases a response only after deterministic citation checks.
+A local RAG portfolio project using **Google ADK for multi-agent orchestration**, **Granite 4.2 through Ollama** for generation, and **EmbeddingGemma through Ollama** for embeddings. A researcher gathers document evidence, a separate reviewer checks the proposed answer, and a deterministic Python gate enforces citations and source permissions.
 
-![Boundary document research interface](docs/assets/boundary-demo.png)
+This rebuild focuses on learning ADK tool calling, agent/session state, separate agent responsibilities, evaluation, and governance. The application, PDFs, vector index, inference, and audit logs run on the laptop. No hosted inference API key or Google Cloud project is needed for the local profile.
 
-The included sample collection contains three cricket rulebooks, making scope a real reasoning problem: general MCC Laws, junior competition formats, and US Ismaili Games tournament rules can differ. For example, a tournament's runner prohibition must not silently replace the conditional runner provisions of the supplied MCC Laws.
+**Status:** local migration implemented; final development regression passed 4/6 cases, and browser answer/citation checks passed while follow-up handling failed. Exact validation and limitations are recorded in [RESULTS_LOCAL.md](docs/RESULTS_LOCAL.md). Do not interpret historical screenshots or cloud evaluation numbers as current local proof. This is an intermediate learning/portfolio prototype, not a production decision system or a guarantee of factual correctness.
 
-**Project status:** intermediate portfolio demo. Offline tests and live acceptance are recorded separately; see `docs/` and private `work/` evidence. This is not a production compliance or policy decision system. The repository includes the manifest and three user-authorized source PDFs so another developer can reproduce ingestion; generated indexes, credentials, logs, sessions and raw evaluation responses remain private.
+## Workflow
 
-> **Measured limitation:** in the latest paced deployed acceptance/regression run, **5 of 10 final cases passed source assessment**. One returned answer omitted junior-format restrictions; four final cases were unavailable because of provider resource exhaustion. Ten of eleven planned turns ran because a failed setup prevented its follow-up. Both latest browser-demo attempts also failed during workflow validation. Stronger structural checks have not established a reliable live demo. See [RESULTS.md](docs/RESULTS.md).
+```text
+Question → ADK researcher → local search/read tools
+         → ADK reviewer → deterministic gate → cited answer
+```
 
-## What it demonstrates
+- The two model agents share the same local Granite 4.2 model but have separate roles and invocations.
+- Three Python tools list authorized sources, search the local index, and read exact source pages.
+- Retrieval combines BM25 and local embedding similarity. The corpus contains three immutable cricket rulebooks, 156 pages, with distinct competition/edition scopes.
+- The gate rejects invalid/unauthorized citations and unread evidence. A real source citation does not prove that a model interpreted it correctly.
+- The local UI provides citations, source text, follow-ups, and run counters. Audit logs retain metadata without prompts, answers, or document passages.
 
-- A real ADK `SequentialAgent`: a tool-using researcher, a separate reviewer `LlmAgent`, then a deterministic gate agent.
-- Three typed tools: `list_sources`, `search_documents`, and `read_evidence`.
-- Actual Vertex embeddings with a fixed page/vector snapshot and local BM25/cosine hybrid retrieval; optional explicitly labeled lexical mode for offline work.
-- Source role allowlists applied before retrieval and rechecked at release; current-invocation evidence IDs advertised in request-local tool schemas; actual page reads required before citation release.
-- Typed reviewer checks for question-part coverage, conditions and unsupported absence claims; deterministic validation rejects inconsistent or stale outputs.
-- Authenticated web research with follow-up sessions, source evidence panels, citations, and visible run counters.
-- Metadata audit logs, bounded model/tool calls, token accounting including thinking, and privacy-aware evaluation evidence.
+Gemma 4 remains selectable with `APP_MODEL=gemma4:latest`, but the active demo uses Granite after the retained local comparisons. See the exact results and limitations before demonstrating it.
 
-Measured outcomes and retained failures are in [RESULTS.md](docs/RESULTS.md). The diagram and exact boundaries are in [ARCHITECTURE.md](docs/ARCHITECTURE.md). For a code-guided explanation, use [LEARNING_GUIDE.md](docs/LEARNING_GUIDE.md); for setup and the five-minute walkthrough, use [DEMO_GUIDE.md](docs/DEMO_GUIDE.md). [PORTFOLIO_NARRATIVE.md](docs/PORTFOLIO_NARRATIVE.md) contains ready-to-use résumé bullets and interview questions. Project working rules are in [AGENTS.md](AGENTS.md).
+## Setup
 
-## Local setup
-
-Python 3.12 and `uv` are the tested runtime. Dependencies are pinned in `pyproject.toml` and `uv.lock`.
+Use Python 3.12, `uv`, and Ollama. The tested machine has 24 GiB RAM; actual context size and other running applications affect memory and latency. The model tags below are local model names, not cloud models.
 
 ```bash
 uv sync --extra dev
-cp -n .env.example .env  # First setup only; preserve an existing private file.
+ollama pull granite4.2:8b
+ollama pull embeddinggemma:latest
+cp -n .env.example .env
 ```
 
-Keep an existing configured `.env`; do not replace it with the offline sample. Configure the application token in `.env` without committing it. The [demo runbook](docs/DEMO_GUIDE.md#reproduce-the-local-setup) lists the required provider, project, embedding and index-hash settings and explains ADC setup. The browser sends `X-App-Token`, leaving `Authorization` available for Cloud Run IAM. Local development is bound to `127.0.0.1`; do not expose an unauthenticated model endpoint.
+Preserve an existing private `.env`. Configure it for the local profile following [DEMO_GUIDE.md](docs/DEMO_GUIDE.md). The template disables generation until explicitly enabled and contains no application token. Keep credentials, derived indexes, runtime sessions and raw evaluation output out of git.
 
-The configured model target is Vertex `gemini-3.1-flash-lite` in `global`; embeddings use `gemini-embedding-001` in `us-central1`, 768 dimensions. Both model agents use the same configured generation model. Actual generation is opt-in through `APP_ENABLE_MODEL_CALLS` and the provider settings. The root operator controls cloud authentication and spend.
-
-The included `corpus/manifest.json` references the three repository PDFs and defines stable source IDs, titles, supplied versions, competition scopes, allowed roles, paths and expected SHA-256 hashes. PDF paths must remain beneath the manifest directory. Ingestion reads the originals without modification, so a developer can reproduce either the offline lexical snapshot or a Vertex embedding snapshot with their own configured Google project.
+Build a **new** local embedding index from the included PDFs; never reuse a Vertex vector index with EmbeddingGemma:
 
 ```bash
-# Offline extraction and lexical index (no cloud calls)
 .venv/bin/python -m app.ingest --manifest corpus/manifest.json \
-  --output work/offline-index.json --embedding-provider lexical
-
-# Real Vertex embeddings; this command incurs Google service usage
-.venv/bin/python -m app.ingest --manifest corpus/manifest.json \
-  --output data/index.json --embedding-provider vertex \
-  --project YOUR_PROJECT --location us-central1 \
-  --embedding-model gemini-embedding-001 --embedding-dimensions 768
+  --output data/index-ollama.json --embedding-provider ollama \
+  --embedding-model embeddinggemma:latest --embedding-dimensions 768
+shasum -a 256 data/index-ollama.json
 ```
 
-Set `APP_INDEX_PATH`, `APP_INDEX_SHA256`, and `APP_EMBEDDING_PROVIDER` to the intended snapshot. A Vertex snapshot cannot silently fall back to lexical retrieval. The ingestion tool disables automatic truncation and rejects truncated or malformed vectors. Retrieval preserves the current user question, combines it with a bounded model refinement, and selects query-focused search previews. `APP_MAX_SEARCH_QUERY_CHARS=1200` limits the refinement; `APP_MAX_EFFECTIVE_SEARCH_QUERY_CHARS=7500` limits the combined query (supported maximum 10000). Overflow fails explicitly. One real Vertex query embedding is combined with local lexical ranking; the index remains unchanged.
+Set `APP_INDEX_PATH=data/index-ollama.json` and `APP_INDEX_SHA256` to the printed hash in `.env`. Then start the custom interface:
 
 ```bash
 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open the local URL, connect with your workspace token, and ask a question. Tokens stay in the tab's memory. The PDF itself is never served; authenticated evidence responses display extracted text and the original page location.
+Open `http://127.0.0.1:8000` and connect using the private `APP_TOKEN`. The token remains in tab memory. Local model requests use `http://127.0.0.1:11434`; there is no cloud fallback.
 
-## Try the workflow
-
-These are walkthrough steps, not a current success claim. The earlier browser sequence passed, but both attempts on the latest revision failed before an answer; review [current results](docs/RESULTS.md) before relying on a live interview demo.
-
-1. Ask: “In the supplied US Ismaili Games rules, how many overs may one bowler bowl?”
-2. Open the numbered citation and inspect the source page text.
-3. Ask: “Can an injured batter have a runner in that tournament?”
-4. Follow up: “How does that compare with the MCC Laws?”
-5. Expand research activity to inspect model/tool counts and the deterministic gate outcome.
-6. Ask a question outside the rulebooks to observe abstention.
-
-Each statement is scoped to the supplied editions. “Evidence reviewed” means the reviewer and deterministic release checks passed; it is not a promise of semantic correctness.
-
-## Verification and evaluation
+To inspect the actual ADK agents and events, use a separate terminal:
 
 ```bash
-# Fully offline tests; test settings isolate the live .env
-.venv/bin/python -m pytest -q
-node --test tests/web_response_validator.test.js
-
-# Evaluation plan only; no endpoint or model calls
-.venv/bin/python evals/run.py
+PYTHONPATH="$PWD" APP_ALLOW_ADK_CLI=true .venv/bin/adk web \
+  --host 127.0.0.1 --port 8001 \
+  --session_service_uri memory:// --artifact_service_uri memory:// \
+  --log_level warning app
 ```
 
-The custom HTTP development harness contains 20 cases/23 turns and records structural integrity, expected page/source coverage, and explicit source-review rubrics. It does not use an LLM judge or label page matches as factual correctness. See [evals/README.md](evals/README.md). The separate acceptance set was first used after the development freeze; integration failures informed a compatibility correction, so subsequent runs are labeled acceptance/regression. Evaluation files with raw responses remain private under `work/`.
+Open `http://127.0.0.1:8001` and select `app`. ADK's developer UI is local operator tooling and exposes intermediate agent events; the custom application shows only governed final responses. Keep the developer UI bound to loopback.
 
-The [native ADK evaluation artifact](evals/README.md#native-adk-evaluation-artifact) has three development cases and four turns. The latest live native run passed all three tool-order cases across four turns. Source assessment credited two of three final answers as complete; the answerable follow-up was safely rejected. Tool-order scoring is not semantic validation. The custom HTTP harness is the separate 20-case/23-turn development evaluation and must not be described as native ADK Eval execution or semantic validation.
+## Verification
 
-## Known limits
+```bash
+.venv/bin/python -m pytest -q
+node --test tests/web_response_validator.test.js
+# Local regression plan; no model calls:
+.venv/bin/python evals/run_local.py
+# Explicitly run against the local Ollama application:
+.venv/bin/python evals/run_local.py --execute
+```
 
-This is a single-workspace demo with a shared access token and server-assigned role, not an enterprise identity system. Conversation state is bounded and temporary. A restart may end a session. The constrained deployment avoids claiming durable multi-instance sessions or globally atomic spend accounting. PDFs use text extraction rather than full layout/table understanding. A fixed corpus does not automatically reflect the newest rules. Model-based review can miss errors, and conservative deterministic scope checks can reject otherwise valid wording.
+The bounded local regression runner refuses a server configured with a non-Ollama model/index. It refuses an existing output file, preserves failed turns, and records source-assessment as pending: structural checks and tool trajectories are not semantic accuracy. Detailed responses go to private `work/`; aggregate findings belong in [RESULTS_LOCAL.md](docs/RESULTS_LOCAL.md).
 
-ADK 2.9.2 currently supports this `SequentialAgent` API but emits a deprecation notice recommending `Workflow`. Dependencies are pinned; a future migration requires re-running orchestration and governance tests.
+See [architecture](docs/ARCHITECTURE.md), [demo guide](docs/DEMO_GUIDE.md), [interview explanation](docs/PORTFOLIO_NARRATIVE.md), and [working rules](AGENTS.md).
 
-The source code, manifest and three supplied PDFs are published under the user's explicit authorization. Original author and copyright notices in the documents must remain intact; this documentation does not assert an additional license for the source documents. The derived vector index, credentials, runtime logs, sessions and raw evaluation artifacts are intentionally excluded. The original RAG prototype and the separate policy/KPI project remain unchanged.
+## Scope and limitations
 
-## Private cloud access and cost
+The project is a single-workspace demonstration with a shared local token, bounded in-memory sessions, and a fixed source corpus. Local models can be slow, abstain unnecessarily, or misinterpret evidence; measure these outcomes and preserve failures. The reviewer uses the same model family and can share the researcher's mistakes. The deterministic gate checks defined contracts and references, not universal truth.
 
-Follow [deploy/README.md](deploy/README.md) for the private build and runtime configuration. For the verified IAM-private service, `gcloud run services proxy boundary-adk --project=sql-bigquery-502206 --region=us-central1 --port=8085` opens an IAM-authenticated local proxy; the app still requires its own token. This is not a public recruiter URL. [COSTS.md](docs/COSTS.md) separates usage estimates from billing caps. Live/deployed success and final metrics remain tied to the recorded acceptance evidence.
+Model inference has no paid per-token API charge in this local configuration; it consumes laptop resources and electricity. Existing historical cloud resources are separate and were not deleted by this migration. The original `RAG Project` and `policy-kpi-rag` remain untouched.
 
-Tool-count interpretation: `usage.tool_calls` counts the three custom document tools. ADK may also emit an internal `set_model_response` formatting call in the trace; it is not an additional document retrieval and is not included in that custom-tool counter.
+The original cloud experiment and its results are preserved under [historical README](docs/HISTORICAL_CLOUD_README.md), [historical architecture](docs/HISTORICAL_CLOUD_ARCHITECTURE.md), [historical demo](docs/HISTORICAL_CLOUD_DEMO.md), and dated review reports. Those instructions describe the previous version and are not the active setup.
+
+The three PDFs are included under the user's publication authorization; their original notices remain intact. No additional license for those documents is asserted. Private derived indexes, credentials, logs, and raw evaluation responses are excluded from publication.

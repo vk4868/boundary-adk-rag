@@ -1,3 +1,5 @@
+> Local Ollama migration: this document records the earlier Vertex/Cloud Run implementation or its evaluation procedure. For the active local setup use `README.md` and `docs/DEMO_GUIDE.md`; current local evidence is in `docs/RESULTS_LOCAL.md`. Historical commands/results are not proof of local-model behavior.
+
 # Private Google Cloud deployment
 
 This is a single-user portfolio demonstration. The Cloud Run service requires Google Cloud IAM authentication. The application additionally requires its own token through `X-App-Token`; `Authorization` is reserved for the Cloud Run identity token.

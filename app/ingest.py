@@ -1,4 +1,4 @@
-"""Deterministic PDF ingestion with explicit optional Vertex embeddings."""
+"""Deterministic PDF ingestion with explicit local or historical embeddings."""
 
 from __future__ import annotations
 
@@ -22,6 +22,14 @@ from app.models import (
     EmbeddingDescriptor,
     PageRecord,
     SourceRecord,
+)
+from app.ollama_embeddings import (
+    DEFAULT_CHUNK_BYTES,
+    EMBEDDING_METHOD,
+    OllamaEmbeddingClient,
+    POOLING_METHOD,
+    chunk_text,
+    pool_embeddings,
 )
 
 
@@ -95,14 +103,46 @@ def _embed_pages(
     return total_billable_characters, truncated_page_count
 
 
+def _embed_pages_ollama(
+    pages: Iterable[PageRecord],
+    *,
+    base_url: str,
+    timeout_ms: int,
+    model: str,
+    dimensions: int,
+    chunk_max_bytes: int = DEFAULT_CHUNK_BYTES,
+) -> str:
+    client = OllamaEmbeddingClient(base_url=base_url, timeout_ms=timeout_ms)
+    model_digest = client.model_digest(model)
+    for page in pages:
+        chunks = chunk_text(
+            page.text or f"Blank PDF page {page.evidence_id}",
+            max_bytes=chunk_max_bytes,
+        )
+        vectors = [
+            client.embed(chunk, model=model, dimensions=dimensions)
+            for chunk in chunks
+        ]
+        page.embedding = pool_embeddings(
+            vectors,
+            [len(chunk.encode("utf-8")) for chunk in chunks],
+            dimensions=dimensions,
+        )
+    if client.model_digest(model) != model_digest:
+        raise RuntimeError("Ollama embedding model digest changed during ingestion")
+    return model_digest
+
+
 def build_index(
     manifest_path: Path,
     *,
     embedding_provider: str = "lexical",
     project: str | None = None,
     location: str = "us-central1",
-    embedding_model: str = "gemini-embedding-001",
+    embedding_model: str = "embeddinggemma:latest",
     embedding_dimensions: int = 768,
+    ollama_base_url: str = "http://127.0.0.1:11434",
+    embedding_timeout_ms: int = 30_000,
 ) -> CorpusIndex:
     raw_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest = CorpusManifest.model_validate(raw_manifest)
@@ -146,7 +186,28 @@ def build_index(
             )
         )
 
-    if embedding_provider == "vertex":
+    if embedding_provider == "ollama":
+        model_digest = _embed_pages_ollama(
+            pages,
+            base_url=ollama_base_url,
+            timeout_ms=embedding_timeout_ms,
+            model=embedding_model,
+            dimensions=embedding_dimensions,
+        )
+        descriptor = EmbeddingDescriptor(
+            provider="ollama",
+            model=embedding_model,
+            model_digest=model_digest,
+            location="loopback",
+            dimensions=embedding_dimensions,
+            task_type="RETRIEVAL_DOCUMENT",
+            truncated_page_count=0,
+            embedding_method=EMBEDDING_METHOD,
+            context_window_tokens=2048,
+            chunk_max_bytes=DEFAULT_CHUNK_BYTES,
+            pooling=POOLING_METHOD,
+        )
+    elif embedding_provider == "vertex":
         if not project:
             raise ValueError("--project is required for Vertex embeddings")
         billable_character_count, truncated_page_count = _embed_pages(
@@ -195,7 +256,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
-        "--embedding-provider", choices=("lexical", "vertex"), default="lexical"
+        "--embedding-provider", choices=("lexical", "ollama", "vertex"), default="lexical"
     )
     parser.add_argument("--project", default=os.getenv("GOOGLE_CLOUD_PROJECT"))
     parser.add_argument(
@@ -203,9 +264,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--embedding-model",
-        default=os.getenv("APP_EMBEDDING_MODEL", "gemini-embedding-001"),
+        default=os.getenv("APP_EMBEDDING_MODEL", "embeddinggemma:latest"),
     )
     parser.add_argument("--embedding-dimensions", type=int, default=768)
+    parser.add_argument(
+        "--ollama-base-url",
+        default=os.getenv("APP_OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+    )
+    parser.add_argument(
+        "--embedding-timeout-ms",
+        type=int,
+        default=int(os.getenv("APP_EMBEDDING_TIMEOUT_MS", "30000")),
+    )
     return parser.parse_args(argv)
 
 
@@ -220,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
             location=args.location,
             embedding_model=args.embedding_model,
             embedding_dimensions=args.embedding_dimensions,
+            ollama_base_url=args.ollama_base_url,
+            embedding_timeout_ms=args.embedding_timeout_ms,
         )
         write_index(index, args.output)
     except (OSError, ValueError, RuntimeError, ValidationError) as exc:

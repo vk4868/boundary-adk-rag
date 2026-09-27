@@ -105,12 +105,13 @@ class AuditLogger:
                 raise AuditWriteError("audit tool name is not allowlisted")
         for field_name in ("model", "model_provider", "model_location"):
             value = event.get(field_name)
+            allowed_punctuation = "._/-:" if field_name == "model" else "._/-"
             if value is not None and (
                 not isinstance(value, str)
                 or not value
                 or len(value) > 128
                 or any(
-                    not (character.isalnum() or character in "._/-")
+                    not (character.isalnum() or character in allowed_punctuation)
                     for character in value
                 )
             ):

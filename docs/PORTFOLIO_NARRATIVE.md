@@ -1,60 +1,42 @@
-# Portfolio and interview narrative
+# Boundary: local ADK RAG interview guide
 
-This is a draft for a project section or interview, not a claim of employment experience. Use only statements you can explain from the code and final evidence. Do not describe an AI-assisted build as manually authored line by line, invent a client engagement, or imply production adoption.
+## The project in one minute
 
-## A clear project description
+“I already had a document RAG project. I rebuilt its workflow with Google ADK to understand how an agent framework coordinates tool calls, state, and multiple agents. A researcher finds and reads document evidence, a separate reviewer checks the proposed claims, and a deterministic Python gate validates citations and source permissions before releasing an answer. The current local workflow uses Ollama for generation and EmbeddingGemma for embeddings.”
 
-“Boundary is a document research assistant built with Google ADK and Vertex AI. It retrieves evidence from an included rulebook corpus, runs separate research and review agents, and uses a deterministic gate to enforce citation identity and source access before releasing an answer. Its sample corpus includes conflicting competition-specific cricket rules, which makes source scope a real part of the reasoning problem.”
+The local migration has passing offline checks and partial live acceptance: 4/6 development cases passed source/safety assessment in the final frozen run. See `RESULTS_LOCAL.md` for browser checks and failures. Historical cloud results do not validate local models.
 
-This description concerns the implemented design. When presenting it as a functioning live demo, first confirm the final application-level acceptance result. A framework import or an offline unit test does not establish that live inference works.
+## What each layer does
 
-## How the work maps to an AI/Data role
+- **RAG:** extracts PDF text, embeds it, retrieves relevant pages, and supplies evidence for an answer.
+- **ADK:** runs the agents in order, manages invocation/session state, exposes Python functions as tools, and provides a developer interface and evaluation facilities.
+- **Ollama:** serves the local generation and embedding models. ADK is the orchestration framework, not the model provider.
+- **Researcher:** calls `list_sources`, `search_documents`, and `read_evidence`; proposes cited claims.
+- **Reviewer:** gets a separate model invocation with review instructions and checks evidence support, question coverage, conditions, and scope. It can use the same model as the researcher; that is a different role, not an independent model family.
+- **Deterministic gate:** ordinary Python validates the reviewer decision, citation IDs, current-turn evidence reads, source permissions, and scope rules. Invalid output is withheld. Valid citations alone cannot guarantee factual correctness.
 
-| Role capability | Concrete project evidence to discuss |
-|---|---|
-| Data ingestion and quality | Immutable PDF inputs, source hashes, page extraction, truncation checks and validated embedding dimensions |
-| Applied generative AI | Real ADK agent orchestration, typed tool calls, structured output and Vertex client configuration |
-| Retrieval engineering | Document/query embeddings, scope-aware source filters, hybrid lexical/dense search and fixed-index tradeoffs |
-| Governance and security | Authentication, server-assigned role, pre-retrieval ACL, current-turn citation checks, private cloud access and metadata-only audit |
-| Evaluation | Development versus acceptance separation, exact denominators, structural/trajectory metrics and source-based semantic assessment with reviewer identity |
-| Cloud engineering | Private Cloud Run, runtime identity, Secret Manager, private build context/image/index and bounded service configuration |
-| Consulting communication | Explain the user problem, a business-relevant decision boundary, tradeoffs, evidence and remaining risks in plain language |
+## Why local
 
-Cricket is a manageable demonstration domain. Do not claim that the same implementation is already approved for regulated client policies. Explain what would need to change: identity integration, durable storage, corpus lifecycle, stronger operational controls, scale testing and domain-specific evaluation.
+Local inference makes this a focused ADK learning project and removes hosted inference credentials and per-token API charges from the running app. Documents, embeddings, model requests, and app logs stay on the laptop in the configured local workflow. Hardware memory, inference latency, and smaller-model reliability are the trade-offs. The local model is not assumed to outperform a cloud model; evaluate it.
 
-## Ready-to-use résumé bullets
+If asked about the earlier implementation: “I experimented with a GCP-hosted version, then simplified the active project to local inference so I could focus on ADK orchestration and make the demo easier to reproduce.” Do not deny the historical experiment or present historical cloud evaluation numbers as current local results.
 
-- Built Boundary, a Google ADK and Vertex AI document research assistant over 156 PDF pages, combining hybrid retrieval, typed tools, separate research/review agents and deterministic citation/access checks.
-- Implemented invocation-scoped evidence controls, bounded repair and metadata audit; verified 119 offline tests plus 12 subtests and three native ADK tool-trajectory cases covering four turns, reporting answer quality separately.
-- Deployed to IAM-private Cloud Run with a dedicated runtime identity, Secret Manager and an immutable private index; evaluated native and deployed behavior while documenting provider-availability, response-validation and semantic-completeness limitations.
+## Resume wording
 
-The latest cloud source assessment is 5/10 and both latest browser attempts failed before an answer. Present this as an intermediate engineering prototype; do not promise a reliable live demo until those failures are fixed and rechecked.
+Built a locally hosted Google ADK multi-agent document research system, with researcher and reviewer agents and a deterministic gate enforcing citations and blocking invalid or unauthorized source references.
 
-These describe a portfolio project, not client employment or production adoption. The build was AI-assisted. Adapt the phrasing to the work you can explain and demonstrate personally. Performance and source-review results—including failures—belong in [RESULTS.md](RESULTS.md); a native tool-order pass is not an answer-correctness claim. Do not claim business impact, enterprise readiness, zero hallucinations or a public recruiter endpoint.
+No claim of production readiness, perfect accuracy, elimination of hallucinations, or business impact is implied. This is a portfolio prototype. Discuss the actual tests and remaining limitations in `RESULTS_LOCAL.md`.
 
-## A concise interview story
+## Explaining the local model choice
 
-**Problem:** People need answers from documents with different scopes and editions. A plausible answer that applies the wrong rulebook can be worse than an explicit “not enough evidence.”
+“I tested local models against the same ADK workflow and strict output contracts. Gemma 4 produced tool-format problems and false rejections in the development cases. I retained those failures and compared the installed Granite 4.2 model. I chose the running model using measured source review, not the model brand.” Use the exact current selection and results in `RESULTS_LOCAL.md`; do not imply a broad benchmark or that every possible question is solved.
 
-**Design:** Use a small fixed, reproducible corpus to make behavior measurable. Give the researcher only three authorized document tools. Run a separate model review and a non-model release gate. Keep credentials, derived indexes, sessions and operational artifacts private while exposing checked source locations through the authenticated runtime.
+## Questions to prepare for
 
-**Tradeoff:** The second model inference adds latency and cost, and the same model can repeat its own mistakes. Page-level retrieval is easy to trace but can struggle with tables or rules spread across pages. The fixed index and temporary sessions suit an intermediate demo rather than a multi-tenant production system.
-
-**Verification:** Point to the actual offline tests and final live results. Explain which checks are deterministic, which are model judgments, and which were assessed by an independent agent or by the user. Do not describe agent assessment as human approval. Show a disagreement or abstention case rather than only a simple lookup.
-
-**Next step:** Pick one limitation supported by the evaluation. For example, improve retrieval for multi-page comparisons or add durable authenticated sessions. Re-evaluate before claiming improvement.
-
-## Questions you should be able to answer without a script
-
-1. Why is `SequentialAgent` appropriate for this fixed workflow?
-2. What can the model request through a tool, and what can it never access?
-3. How are stale citations and cross-session responses rejected?
-4. Why does an ACL need to run before an embedding search?
-5. How did you verify that `.env` configuration actually reached Vertex's SDK client?
-6. What happens when audit storage fails, a model times out, or a schema cannot be parsed?
-7. Which metrics prove tool order or citation integrity, and which evaluate semantic correctness?
-8. Why does the generated index remain private even though the source PDFs are included in the repository?
-9. What are the limits of the current spending controls and temporary Cloud Run sessions?
-10. What did the final evaluation fail, and what did you change because of that evidence?
-
-Use `docs/LEARNING_GUIDE.md` to map each answer to code and `docs/DEMO_GUIDE.md` to rehearse the demonstration. Final measurements belong in the completed evidence report; this draft intentionally does not invent them.
+1. Why use an agent workflow instead of one RAG prompt? Explain explicit stages, tool use, inspection, and independent release checks; mention extra latency.
+2. Why two agents using the same model? Separate responsibilities and prompts; shared model weaknesses remain.
+3. What makes the gate deterministic? Show code checks and a rejected fabricated citation, without a model judging permission.
+4. What does ADK manage versus your code? ADK executes agents and tools; application code handles retrieval, permissions, contracts, budgets, and release.
+5. How are follow-ups grounded? Conversation supplies context, but citations must be retrieved and read in the current invocation.
+6. How did you evaluate it? Separate offline guardrail tests, ADK tool trajectories, source-based answer review, and browser workflow checks.
+7. What would you improve? Better retrieval granularity, section context, a larger unseen evaluation set, and measured latency/reliability improvements.

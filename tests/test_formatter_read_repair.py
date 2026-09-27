@@ -6,12 +6,15 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
+from google.adk.agents import LlmAgent
 from google.adk.events import EventActions
-from google.adk.models import LlmRequest
+from google.adk.models import BaseLlm, LlmCapabilities, LlmRequest, LlmResponse
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
 from google.adk.tools.set_model_response_tool import SetModelResponseTool
 from google.genai import types
 
-from app.agents import build_agent
+from app.agents import _state_model, build_agent
 from app.config import Settings
 from app.gate import apply_gate
 from app.index import IndexRepository
@@ -46,10 +49,8 @@ def harness(tmp_path) -> RepairHarness:
     settings = Settings(
         _env_file=None,
         app_enable_model_calls=True,
-        app_model_provider="vertex",
-        google_cloud_project="offline-repair-test",
-        google_cloud_location="global",
-        app_embedding_provider="lexical",
+        app_model_provider="ollama",
+        app_embedding_provider="ollama",
         app_index_path=tmp_path / "unused-index.json",
         app_audit_path=tmp_path / "unused-audit.jsonl",
         app_allowed_roles="analyst,admin",
@@ -180,6 +181,102 @@ def _passing_review(claim_count: int = 1) -> ReviewDecision:
         conditions_preserved=True,
         unsupported_absence_claim_indices=[],
         abstention_justified=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_reviewer_formatter_returns_feedback_then_sets_valid_typed_state():
+    formatter = SetModelResponseTool(ReviewDecision)
+    invalid_context = _tool_context()
+    invalid = _passing_review().model_dump()
+    invalid["conditions_preserved"] = False
+
+    feedback = await formatter.run_async(args=invalid, tool_context=invalid_context)
+
+    assert "error" in feedback
+    assert invalid_context.actions.set_model_response is None
+
+    valid_context = _tool_context()
+    valid = _passing_review().model_dump()
+    result = await formatter.run_async(args=valid, tool_context=valid_context)
+
+    assert result == valid
+    assert valid_context.actions.set_model_response == valid
+
+
+@pytest.mark.asyncio
+async def test_adk_reviewer_formatter_loop_repairs_invalid_then_saves_valid_state():
+    invalid = _passing_review().model_dump()
+    invalid["conditions_preserved"] = False
+    valid = _passing_review().model_dump()
+
+    class TwoTurnModel(BaseLlm):
+        calls: int = 0
+
+        @property
+        def capabilities(self):
+            return LlmCapabilities(output_schema_and_tools=False)
+
+        async def generate_content_async(self, llm_request, stream=False):
+            del llm_request, stream
+            payload = invalid if self.calls == 0 else valid
+            self.calls += 1
+            yield LlmResponse(
+                content=types.Content(
+                    role="model",
+                    parts=[
+                        types.Part(
+                            function_call=types.FunctionCall(
+                                id=f"review-{self.calls}",
+                                name="set_model_response",
+                                args=payload,
+                            )
+                        )
+                    ],
+                ),
+                usage_metadata=types.GenerateContentResponseUsageMetadata(
+                    prompt_token_count=1, candidates_token_count=1
+                ),
+            )
+
+    model = TwoTurnModel(model="offline-review-loop")
+    agent = LlmAgent(
+        name="reviewer",
+        model=model,
+        instruction="Return the typed review using set_model_response.",
+        tools=[SetModelResponseTool(ReviewDecision)],
+        output_key="review_decision",
+    )
+    sessions = InMemorySessionService()
+    session = await sessions.create_session(
+        app_name="review-test", user_id="review-user"
+    )
+    runner = Runner(agent=agent, app_name="review-test", session_service=sessions)
+    events = [
+        event
+        async for event in runner.run_async(
+            user_id="review-user",
+            session_id=session.id,
+            new_message=types.Content(
+                role="user", parts=[types.Part(text="review")]
+            ),
+        )
+    ]
+
+    assert model.calls == 2
+    assert any(
+        response.name == "set_model_response" and "error" in response.response
+        for event in events
+        for response in event.get_function_responses()
+    )
+    saved = await sessions.get_session(
+        app_name="review-test", user_id="review-user", session_id=session.id
+    )
+    assert ReviewDecision.model_validate_json(saved.state["review_decision"]) == (
+        ReviewDecision.model_validate(valid)
+    )
+    assert _state_model(ReviewDecision, saved.state["review_decision"]) == (
+        ReviewDecision.model_validate(valid)
     )
 
 

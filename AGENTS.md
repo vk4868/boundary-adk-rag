@@ -2,6 +2,10 @@
 
 This is the canonical project working-rules file. Keep the uppercase name `AGENTS.md`; do not create a second `agents.md`. Apply these rules to this directory and its descendants. Later explicit user instructions take precedence. Update factual implementation notes when the implementation changes; do not silently reinterpret the authorized scope.
 
+## Current scope update — 27 September 2026
+
+The user authorized migration to a fully local runtime: Google ADK orchestrates a researcher, a separate reviewer, and a deterministic release gate; Ollama supplies both model roles. The measured active choice is `granite4.2:8b` after Gemma 4 compatibility/quality failures; `embeddinggemma:latest` supplies local embeddings. This supersedes the earlier Vertex/Gemini runtime choices; cloud-specific instructions below describe only the historical baseline. No paid Google or OpenAI calls, new cloud deployments, or cloud fallback are part of this migration. Bind model and application endpoints to loopback; preserve the original projects, immutable PDFs, evidence checks, private metadata audit, and historical evaluation records. Rebuild and separately hash a local index; never mix embeddings from different models. Validate the actual local workflow before claiming success. Existing Google resources are historical and are not deleted as part of this code migration. Keep their cleanup separate and scoped. Cloud results must not be represented as local-model validation.
+
 ## 1. User-authorized scope and constraints
 
 These are user requirements, not optional architecture preferences:
@@ -13,7 +17,7 @@ These are user requirements, not optional architecture preferences:
 - The user authorized at most **US$10 total Google service usage** for this build and sending the existing three PDFs to Google model services. Include embeddings, generation, retries/uncertain requests, build, storage and hosting in the tracked estimate. Existing trial credits are not permission to exceed this limit.
 - The user explicitly authorized publishing this project's source code and the three existing corpus PDFs to GitHub on 23 September 2026. Publish only the reviewed repository allowlist. This authorization does not include credentials, private derived index, container image containing that index, raw evaluation responses, logs, or unrelated files.
 - The original overnight timebox was 2026-09-22 11:06–21:06 UTC. The user subsequently explicitly resumed the automation beyond that deadline. Continue the documented quality fixes and authorized GitHub publication; the original US$10 Google ceiling remains unchanged.
-- No public unauthenticated model endpoint and no external messages. Private Google Cloud deployment within the authorized scope is permitted and is coordinated by root.
+- No public unauthenticated model endpoint and no external messages. Earlier private Google Cloud deployment authorization is historical; the active migration permits local work only.
 - Preserve immutable originals. Do not rewrite, rename, delete, or replace the PDFs in the original `RAG Project`.
 
 Already-authorized reversible implementation, fixes, testing, and private deployment preparation should continue without asking for the same permission again. This file adds no new approval gate for that work. Escalate only a real conflict, missing authorization, required external input, or exhausted time/spend constraint; make the concrete result reviewable first.
@@ -37,8 +41,8 @@ This section describes the current design; it is not a request to add a new fram
 - Product name: **Boundary — Document Intelligence**. Its sample domain is cricket rules, illustrating policy-style document research with competition and edition awareness.
 - Runtime: Python 3.12, FastAPI, static HTML/CSS/JavaScript, and pinned dependencies in `pyproject.toml`/`uv.lock`.
 - Google ADK 2.9.2: a real `SequentialAgent` runs `document_researcher` (`LlmAgent`), `evidence_reviewer` (a separate `LlmAgent` inference), then a deterministic non-model gate agent.
-- `GovernedGemini` explicitly selects ADK's formatter-tool path. Preserve clean-process parity tests with the Vertex environment flag both true and false; environment-dependent capability inference previously broke native and deployed forced tool calls. Keep researcher tool MIME/schema handling separate from the reviewer's JSON schema.
-- Every model agent uses the same configured low-cost Gemini model. The configured generation target is Vertex `gemini-3.1-flash-lite` at `global`; application-level live generation acceptance is recorded separately. The ingested embedding snapshot uses Vertex `gemini-embedding-001` at `us-central1`, 768 dimensions.
+- The local `GovernedLiteLlm` adapter uses ADK's formatter-tool path for the researcher and structured reviewer output. Preserve request-local tool constraints, citation-read repair, and strict review/gate contracts while adapting provider transport. Google GenAI types used by ADK do not imply a Google model call.
+- Both local model agents use Ollama `granite4.2:8b` in separate roles. `gemma4:latest` remains selectable, with its failed development runs retained. Retrieval uses a new `embeddinggemma:latest` 768-dimensional snapshot, built independently from historical Vertex vectors. Numeric loopback origins only; no hosted inference fallback or paid model calls.
 - The researcher has exactly three document tools: `list_sources`, `search_documents`, and `read_evidence`. Tools expose no arbitrary filesystem, shell, URL fetch, or cloud mutation operation.
 - The live retrieval path uses a fixed private page/vector JSON index and hybrid ranking (65% normalized BM25, 35% normalized cosine similarity). The explicit lexical mode is for offline/debug use; never silently substitute it for the live vector path.
 - The native ADK CLI/dev/eval export constructs a fresh governed pipeline and ledger per invocation. `APP_ALLOW_ADK_CLI=true` is an explicit local-operator opt-in; it is not a substitute for HTTP authentication on a deployed endpoint.
@@ -81,6 +85,7 @@ The published corpus manifest is `corpus/manifest.json`. Source paths are confin
 - One bounded pre-finalization repair may request an actual read of authorized unread IDs issued by any search in the current invocation. It must preserve room for read, finalization and review, clear repair state every turn, and never mark pages read in a callback. The final gate remains unchanged; a failed or ineligible repair cannot release unsupported claims.
 - The separate reviewer checks the original question's requested parts, conditions and exceptions against the proposed claims and read evidence. Required compact coverage maps to strict zero-based claim indices. Empty coverage, inconsistent status and invalid references cannot approve an answer. A missed search is not evidence that a source has no rule. Combined evidence may support a comparison; every cited page must be relevant, but one page need not entail the whole cross-source sentence.
 - The deterministic gate checks reviewer outcome and coverage consistency, claim count, citation identity, ACL, and scope rules. Justified insufficient-evidence responses use a separate compatible contract. A failed gate withholds the research draft. The normal web interface shows only the final governed response. Typed coverage cannot prove that the model identified every relevant question part correctly.
+- The reviewer uses only ADK's internal `SetModelResponseTool(ReviewDecision)`, with no document tools. Permit at most two reviewer model attempts in one invocation (one validation correction), still within the global eight-call limit; a first invalid review on global call eight cannot trigger a ninth call. Keep validation feedback bounded and current-invocation-only, and reset it with the invocation. Never coerce an invalid verdict into a valid one.
 - Do not claim semantic grounding from syntactic citation checks. The model reviewer can also miss errors; source-based semantic assessment is part of acceptance. Label an agent assessment accurately and keep the user's later manual verification separate.
 - Source panels must expose the supporting text and original page location, not an arbitrary prefix that hides the cited clause.
 - The UI validates response shape and citation linkage. Only an explicit successful answer with all governance flags and a passed deterministic gate receives the reviewed badge. Safe abstentions/rejections have neutral labels.
@@ -89,8 +94,8 @@ The published corpus manifest is `corpus/manifest.json`. Source paths are confin
 ### Budgets and timeouts
 
 - All paid calls are coordinated by root and reconciled against the remaining US$10 authorization. Do not run a cloud-enabled ingestion or evaluator merely to see if it works.
-- Count both researcher and reviewer calls, each custom document-tool call, and billable output including thinking tokens. `usage.tool_calls` counts the three governed document tools; ADK internal formatting calls such as `set_model_response` appear separately in the event trace and are not included in that custom-tool counter. Transport retries must remain explicitly bounded and accounted for; the current SDK configuration uses one attempt.
-- Per-request model/tool/token/time limits are configured centrally in `app/config.py`. The current defaults are eight model calls, eight tool calls, an 80,000-token aggregate input limit, a 7,200-token aggregate output limit, 900 output tokens per call, and 120 seconds per request.
+- Count both researcher and reviewer calls, each custom document-tool call, and billable output including thinking tokens. `usage.tool_calls` counts the three governed document tools; ADK internal formatting calls such as `set_model_response` appear separately in the event trace and are not included in that custom-tool counter. Transport retries must remain explicitly bounded and accounted for; the local adapter makes one transport dispatch with zero retries (ADK HttpRetryOptions attempts=0 maps to LiteLLM num_retries=0).
+- Per-request model/tool/token/time limits are configured centrally in `app/config.py`. The local defaults are eight model calls, eight tool calls, an 80,000-token aggregate input limit, a 7,200-token aggregate output limit, 900 output tokens per call, a 32,000-character evidence-exposure cap, and 480 seconds per workflow. Each generation dispatch has a 120-second timeout. The configured 16,384-token context uses a conservative request-size estimate, not an exact tokenizer guarantee.
 - Prospective input usage is estimated, not an exact tokenizer guarantee. Cost estimates and cloud billing budgets are **not hard billing caps**. Reserve conservatively for a dispatched request even if the client times out or the response is lost.
 - Generation and embedding SDK calls have finite explicit timeouts. A local timeout or canceled coroutine does not prove that upstream work stopped or that no cost accrued.
 - Preserve the current user question alongside the model's search refinement. The refinement defaults to 1,200 characters (maximum 4,000); the combined query defaults to 7,500 characters (maximum 10,000), with explicit overflow failure and no silent truncation. Search previews use query-focused windows, while released citations retain the full source page.
@@ -102,13 +107,13 @@ The published corpus manifest is `corpus/manifest.json`. Source paths are confin
 - Use the audit allowlist; do not expand it casually. Normalize unknown model-produced tool/agent names instead of recording arbitrary text.
 - An audit preflight must be durable before model dispatch. A final audit append must succeed before a successful response is released. An audit-write failure fails closed.
 - JSONL writes are append-only, private, completed fully and fsynced. The dedicated metadata logger emits JSON to stdout after the durable append; do not globally enable verbose SDK logging.
-- Cloud Run's filesystem is temporary. Local fsync and Cloud Logging are not a durable multi-user conversation database. Observed stage intervals are not distributed tracing spans.
+- Local fsync provides durable metadata audit records, not a multi-user conversation database. The historical Cloud Run filesystem was temporary. Observed stage intervals are not distributed tracing spans.
 - Detailed evaluation responses are a separate, explicit private diagnostic artifact under `work/`, with restricted file permissions. They are not permitted in default audit logs or public reports.
 
 ## 5. Evaluation, evidence, and honest claims
 
 - Preserve deterministic offline tests for meaningful boundaries: authorization, stale evidence/state, budgets, audit failure, output structure, sessions, index integrity, and citation release.
-- Offline tests must isolate `.env` and replace SDK/model execution. The real local `.env` may enable paid calls. Do not treat importing a configuration as authorization to dispatch a request.
+- Offline tests must isolate `.env` and replace SDK/model execution. The private `.env` enables live inference; historical configurations may enable paid calls. Do not treat importing a configuration as authorization to dispatch a request.
 - `evals/cases.jsonl` is the transparent 20-case development set, with 23 requests including setup turns. It is available for implementation tuning and must never be called a holdout.
 - `evals/run.py` is a **custom HTTP harness**. It checks structure, source/page coverage, and expected outcomes, records all planned/executed IDs and failures, and leaves semantic review pending. Setup turns must themselves be valid and retain their session before a follow-up is scored.
 - `evals/native.evalset.json` and `evals/native.config.json` use the **native Google ADK trajectory metric** for three development cases/four turns. Tool-order scoring is not answer correctness or semantic grounding. Synthetic metric tests are not live ADK Eval execution.
@@ -125,7 +130,7 @@ Start from this file, then `README.md`, `docs/ARCHITECTURE.md`, and the relevant
 | Location | Purpose |
 |---|---|
 | `app/config.py`, `app/models.py` | Runtime settings and typed contracts |
-| `app/ingest.py`, `scripts/ingest.py` | Immutable-source extraction and optional paid embedding |
+| `app/ingest.py`, `scripts/ingest.py` | Immutable-source extraction and explicit embedding providers |
 | `app/index.py`, `app/tools.py` | Authorized retrieval and run ledger |
 | `app/agents.py`, `app/gate.py` | Real ADK agents and deterministic release |
 | `app/service.py`, `app/main.py`, `app/audit.py` | Sessions, HTTP auth, audit and API |
@@ -163,9 +168,9 @@ Root coordinates commands that use `--embedding-provider vertex`, `evals/run.py 
 
 Use `work/` for scratch files. Keep immutable originals in the separate prototype untouched. Only the three approved PDF copies and their manifest may enter git; keep embeddings, credentials, sessions and sensitive logs excluded. Use the explicit deployment upload allowlist; do not upload the whole workspace. Do not perform unrelated changes, destructive cleanup, or deletion of existing BigQuery resources. Stop only processes created for this task and identified precisely.
 
-## 7. Private cloud deployment
+## 7. Historical private cloud deployment (inactive migration target)
 
-Follow `deploy/README.md`; root owns its resources and release actions. The current target is IAM-private Cloud Run with a dedicated runtime service account, Secret Manager application token, private image/index artifacts, minimum instances zero, maximum instances one, one worker and bounded timeouts.
+The following records the historical cloud setup; it is not the active local target or permission to deploy during this migration. Root owns its resources and any separately scoped retirement. The prior target was IAM-private Cloud Run with a dedicated runtime service account, Secret Manager application token, private image/index artifacts, minimum instances zero, maximum instances one, one worker and bounded timeouts.
 
 - Keep Cloud Run IAM authentication enabled and application-token authentication in place. Do not create a public model proxy or share an unauthenticated invocation URL.
 - Use a private prebuilt index, pinned by hash. Do not put PDFs or local credentials in the image or build context.
@@ -180,9 +185,9 @@ A completion claim must identify what was actually achieved:
 1. The local interface works with the fixed authorized corpus, including a sourced answer, a follow-up, a cross-source comparison, a safe abstention and rejection of invalid access/citation behavior.
 2. Real ADK researcher/reviewer execution and actual document tool calls are observable in metadata evidence; the gate controls the released response.
 3. Meaningful offline tests pass and reviewer findings are corrected and re-reviewed. Live model evaluation and reviewer semantic assessment are recorded with exact coverage, reviewer type and remaining failures; any pending user manual review is stated separately.
-4. Default logs and distributed artifacts respect the privacy boundary; original PDF hashes remain unchanged; configuration and estimated Google usage are reconciled within the authorized ceiling.
+4. Default logs and distributed artifacts respect the privacy boundary; original PDF hashes remain unchanged; the active loopback configuration is verified; historical Google costs remain separately accounted.
 5. The README, architecture, working rules, evaluation instructions, review evidence and limitations match the implementation. The user can run and demonstrate the result without reconstructing undocumented steps.
-6. If private cloud deployment completes within the timebox, verify the deployed browser→API→retrieval→model→review→gate path and record it. If deployment cannot complete, report the verified local result and precise cloud blocker without pretending deployment passed.
+6. For the local migration, verify browser→local API→Ollama retrieval/model→review→gate and the native ADK inspector separately. Record exact local model/index identities and retained failures. Cloud evidence cannot substitute for local validation.
 
 Explicit exclusions: production/enterprise readiness certification; publication outside the authorized source/PDF scope; multi-tenant identity/SSO; durable multi-instance conversation storage; globally atomic billing caps; arbitrary uploads/web browsing/shell tools; automatic corpus updates; modification of the original prototype, policy/KPI project or existing BigQuery resources; and unmeasured business-impact or résumé claims.
 
